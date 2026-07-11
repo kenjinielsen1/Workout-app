@@ -1,0 +1,36 @@
+name: Retrain ML model
+on:
+  schedule:
+    - cron: '0 9 * * 1' # Mondays 09:00 UTC
+  workflow_dispatch: {}
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - id: export
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          npx tsx scripts/export-training-table.ts ml/training_table.json
+          echo "rows=$(node -e "console.log(require('./ml/training_table.json').length)")" >> "$GITHUB_OUTPUT"
+      - if: ${{ fromJSON(steps.export.outputs.rows) < 30 }}
+        run: echo "Only ${{ steps.export.outputs.rows }} rows — keeping the current model."
+      - uses: actions/setup-python@v5
+        if: ${{ fromJSON(steps.export.outputs.rows) >= 30 }}
+        with: { python-version: '3.12' }
+      - name: Train + deploy
+        if: ${{ fromJSON(steps.export.outputs.rows) >= 30 }}
+        working-directory: ml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          pip install -r requirements.txt
+          python train.py --input training_table.json --out models/model.joblib
+          curl -L https://fly.io/install.sh | sh
+          export PATH="$HOME/.fly/bin:$PATH"
+          fly deploy --ha=false
