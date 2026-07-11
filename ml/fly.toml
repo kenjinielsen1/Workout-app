@@ -1,6 +1,6 @@
 # Fly.io config for the ML service. Rename `app` to your chosen Fly app name.
 # Deploy:  cd ml && fly launch --no-deploy  (adopt this file) && fly deploy
-app = "workout-tracker-ml"
+app = "wt-ml-9c685413"
 primary_region = "iad"
 
 [build]
