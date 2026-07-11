@@ -1,0 +1,19 @@
+# Fly.io config for the ML service. Rename `app` to your chosen Fly app name.
+# Deploy:  cd ml && fly launch --no-deploy  (adopt this file) && fly deploy
+app = "workout-tracker-ml"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Stateless predict endpoint — scale to zero when idle to keep it free/cheap.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb" # numpy + scikit-learn need headroom

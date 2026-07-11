@@ -52,3 +52,12 @@ def test_predict_rejects_wrong_feature_length():
         json={"features": [0.0] * 10, "sessions_logged": 1, "sessions_for_exercise": 1},
     )
     assert r.status_code == 422
+
+
+def test_cors_allows_cross_origin_browser_calls():
+    r = client.post(
+        "/predict",
+        headers={"Origin": "https://workout-app-sage-three.vercel.app"},
+        json={"features": _features(), "sessions_logged": 2, "sessions_for_exercise": 2},
+    )
+    assert r.headers.get("access-control-allow-origin") in ("*", "https://workout-app-sage-three.vercel.app")

@@ -9,7 +9,10 @@ confidence; the rule engine remains the permanent fallback.
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .feature_spec import feature_count
 from .model import (
@@ -20,7 +23,17 @@ from .model import (
 )
 from .schemas import PredictRequest, PredictResponse
 
-app = FastAPI(title="Progressive Overload ML", version="1.0.0")
+app = FastAPI(title="Workout Tracker ML", version="1.0.0")
+
+# The browser calls /predict cross-origin (from the Vercel app), so CORS is
+# required. Restrict with ALLOWED_ORIGINS (comma-separated) in production; default
+# is open since the endpoint is stateless and unauthenticated.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",")],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 # Loaded once at import; reload by restarting the process after a retrain.
 MODEL = E1RMModel.load()

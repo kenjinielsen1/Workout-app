@@ -37,18 +37,39 @@ works from the deployed site.
 
 ## 3. (Optional) ML service → Fly.io
 
-The service is containerized ([ml/Dockerfile](ml/Dockerfile)).
+The service is containerized ([ml/Dockerfile](ml/Dockerfile), which also **bakes in
+a starter model** so `/predict` returns real ElasticNet predictions) and has a Fly
+config ([ml/fly.toml](ml/fly.toml)). CORS is enabled so the browser can call it.
 
 ```bash
+# Install flyctl (no Homebrew needed) and log in (opens a browser):
+curl -L https://fly.io/install.sh | sh
+fly auth login
+
 cd ml
-fly launch --no-deploy          # creates fly.toml (pick a name/region)
-fly deploy
-# train + persist a model, or mount one; until then /predict serves the fallback
+# Pick a unique app name — edit `app` in fly.toml (e.g. workout-tracker-ml-<you>):
+fly launch --no-deploy      # adopts the existing fly.toml
+fly deploy                  # builds the image (runs train.py) and ships it
+
+# Lock CORS to your site (optional but recommended):
+fly secrets set ALLOWED_ORIGINS=https://workout-app-sage-three.vercel.app
 ```
 
-Then set `VITE_ML_URL=https://<app>.fly.dev` in Vercel and redeploy. The nightly
-`evaluate.py` gate runs as a scheduled job (Fly Machines / cron) against exported
-outcomes.
+Then turn the ML blend on:
+
+1. In **Vercel → Settings → Environment Variables**, add
+   `VITE_ML_URL=https://<your-app>.fly.dev`.
+2. **Redeploy** (Vite inlines it at build time).
+
+The app calls `/predict` on the live path only as a *post-hoc refinement* — if the
+service is down or slow it silently falls back to the rule engine (α=0), so this
+can never break logging.
+
+### Nightly retrain gate
+
+Run [ml/evaluate.py](ml/evaluate.py) on a schedule (Fly Machines cron, GitHub
+Actions `schedule`, or Supabase cron) against exported outcomes; it retrains and
+sets each user's `ml_alpha_cap` to 0 when the model loses to the rules.
 
 ## Notes
 

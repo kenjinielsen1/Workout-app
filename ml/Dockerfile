@@ -12,6 +12,11 @@ COPY app ./app
 COPY feature_spec.json .
 COPY train.py .
 
+# Bake in a starter model so /predict serves real ElasticNet predictions rather
+# than the heuristic fallback. The nightly evaluate/retrain replaces it with one
+# trained on real logged outcomes (and gates it off if it underperforms the rules).
+RUN python train.py --n 4000
+
 ENV MODEL_PATH=/app/models/model.joblib
 EXPOSE 8000
 
