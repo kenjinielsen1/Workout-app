@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+
+# ML service (Python)
+ml/.venv/
+ml/models/
+ml/**/__pycache__/
+ml/.pytest_cache/

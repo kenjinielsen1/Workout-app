@@ -1,0 +1,274 @@
+import { useEffect, useMemo, useState } from 'react';
+import { effectiveLoad } from '../lib/effectiveLoad';
+import { equipmentIncrement } from '../lib/rounding';
+import { plateLoadout } from '../lib/plateMath';
+import { formatRest, nextSetTarget } from '../lib/liveProgression';
+import type { Equipment, LoadType } from '../lib/types';
+import { NumberStepper } from '../components/NumberStepper';
+import { RirSlider } from '../components/RirSlider';
+import { PlateChips } from '../components/PlateChips';
+
+export interface LogSetExercise {
+  name: string;
+  equipment: Equipment;
+  load_type: LoadType;
+  default_increment_lb: number;
+  is_compound: boolean;
+}
+
+export interface LogSetProfile {
+  bodyweight_lb: number;
+  has_micro_plates: boolean;
+  dumbbell_increment_lb: number;
+}
+
+export interface SessionTarget {
+  target_weight_lb: number;
+  target_reps: number;
+  target_sets: number;
+  rationale?: string;
+}
+
+export interface LoggedSet {
+  id: string;
+  set_number: number;
+  weight_lb: number;
+  reps: number;
+  rir: number;
+  is_warmup: boolean;
+  failed: boolean;
+}
+
+interface LogSetProps {
+  exercise: LogSetExercise;
+  profile: LogSetProfile;
+  target: SessionTarget;
+  onLogSet?: (set: LoggedSet) => void;
+  onDeleteSet?: (id: string) => void;
+}
+
+const newId = (): string =>
+  globalThis.crypto?.randomUUID?.() ?? `set-${Math.random().toString(36).slice(2)}`;
+
+function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfile): string {
+  const eff = effectiveLoad({ weight_lb: weight }, ex, { bodyweight_lb: profile.bodyweight_lb });
+  switch (ex.load_type) {
+    case 'per_hand':
+      return `${weight} lb each hand · ${eff} lb on the body`;
+    case 'per_side':
+      return `${weight} lb per side · ${eff} lb total`;
+    case 'bodyweight_plus':
+      return `bodyweight ${profile.bodyweight_lb} + ${weight} · ${eff} lb on the body`;
+    case 'total':
+    default:
+      return `${eff} lb on the body`;
+  }
+}
+
+export function LogSet({ exercise, profile, target, onLogSet, onDeleteSet }: LogSetProps) {
+  const weightStep = equipmentIncrement(exercise, profile);
+  const [weight, setWeight] = useState(target.target_weight_lb);
+  const [reps, setReps] = useState(target.target_reps);
+  const [rir, setRir] = useState(2);
+  const [isWarmup, setIsWarmup] = useState(false);
+  const [sets, setSets] = useState<LoggedSet[]>([]);
+  const [nextNote, setNextNote] = useState<string | null>(null);
+  const [rest, setRest] = useState<number | null>(null);
+
+  const plates = useMemo(
+    () => plateLoadout(weight, exercise, profile),
+    [weight, exercise, profile],
+  );
+  const workingCount = sets.filter((s) => !s.is_warmup).length;
+
+  // Rest countdown — pure local ticking, no network.
+  const resting = rest !== null && rest > 0;
+  useEffect(() => {
+    if (!resting) return;
+    const id = setInterval(() => setRest((r) => (r && r > 0 ? r - 1 : 0)), 1000);
+    return () => clearInterval(id);
+  }, [resting]);
+
+  const removeSet = (id: string) => {
+    setSets((prev) => prev.filter((s) => s.id !== id));
+    onDeleteSet?.(id);
+  };
+
+  const commit = (s: Omit<LoggedSet, 'set_number' | 'id'>) => {
+    const logged: LoggedSet = { ...s, id: newId(), set_number: sets.length + 1 };
+    setSets((prev) => [...prev, logged]);
+    onLogSet?.(logged);
+
+    // LIVE within-session autoregulation: advance the next set instantly, locally.
+    if (!s.is_warmup) {
+      const next = nextSetTarget({
+        currentWeight: s.weight_lb,
+        targetReps: target.target_reps,
+        last: { reps: s.reps, rir: s.rir, failed: s.failed },
+        exercise,
+        profile,
+      });
+      setWeight(next.weight_lb);
+      setReps(next.target_reps);
+      setNextNote(next.note);
+      setRest(next.rest_seconds);
+    }
+  };
+
+  const logCurrent = () => {
+    commit({ weight_lb: weight, reps, rir, is_warmup: isWarmup, failed: false });
+  };
+
+  const hitTarget = () => {
+    setWeight(target.target_weight_lb);
+    setReps(target.target_reps);
+    commit({
+      weight_lb: target.target_weight_lb,
+      reps: target.target_reps,
+      rir,
+      is_warmup: false,
+      failed: false,
+    });
+  };
+
+  const markFailed = () => {
+    commit({ weight_lb: weight, reps, rir: 0, is_warmup: isWarmup, failed: true });
+  };
+
+  return (
+    <div className="mx-auto flex min-h-full max-w-md flex-col gap-5 px-4 py-6 text-neutral-900 dark:text-neutral-50">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-2xl font-bold">{exercise.name}</h1>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded-full bg-emerald-600 px-3 py-1 font-semibold text-white">
+            Target {target.target_weight_lb} lb × {target.target_reps}
+          </span>
+          <span className="text-neutral-500 dark:text-neutral-400">
+            set {Math.min(workingCount + 1, target.target_sets)} of {target.target_sets}
+          </span>
+        </div>
+        {target.rationale && (
+          <p className="mt-1 text-sm leading-snug text-neutral-500 dark:text-neutral-400">
+            {target.rationale}
+          </p>
+        )}
+      </header>
+
+      {nextNote && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-neutral-100 px-4 py-3 dark:bg-neutral-800">
+          <div className="flex flex-col">
+            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Next set</span>
+            <span className="text-sm font-semibold">{nextNote}</span>
+          </div>
+          {rest !== null && (
+            <button
+              type="button"
+              onClick={() => setRest(null)}
+              aria-label="rest timer"
+              className={`rounded-xl px-3 py-2 text-lg font-bold tabular-nums ${
+                resting ? 'bg-emerald-600 text-white' : 'bg-neutral-200 text-neutral-500 dark:bg-neutral-700'
+              }`}
+            >
+              {resting ? formatRest(rest) : 'rest done'}
+            </button>
+          )}
+        </div>
+      )}
+
+      <NumberStepper
+        label="Weight"
+        value={weight}
+        onChange={setWeight}
+        step={weightStep}
+        unit="lb"
+        data-testid="weight-input"
+      />
+
+      <PlateChips result={plates} effectiveNote={effectiveNote(weight, exercise, profile)} />
+
+      <NumberStepper
+        label="Reps"
+        value={reps}
+        onChange={(n) => setReps(Math.round(n))}
+        step={1}
+        data-testid="reps-input"
+      />
+
+      <RirSlider value={rir} onChange={setRir} />
+
+      <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
+        <input
+          type="checkbox"
+          checked={isWarmup}
+          onChange={(e) => setIsWarmup(e.target.checked)}
+          className="h-5 w-5 rounded accent-emerald-600"
+        />
+        Warm-up set (excluded from progression)
+      </label>
+
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={hitTarget}
+          className="rounded-2xl bg-emerald-600 py-4 text-lg font-bold text-white active:scale-[0.99]"
+        >
+          Hit target ✓
+        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={logCurrent}
+            className="flex-1 rounded-2xl bg-neutral-200 py-3 font-semibold text-neutral-800 active:scale-[0.99] dark:bg-neutral-700 dark:text-neutral-100"
+          >
+            Log set
+          </button>
+          <button
+            type="button"
+            onClick={markFailed}
+            className="rounded-2xl bg-neutral-100 px-4 py-3 font-medium text-amber-700 active:scale-[0.99] dark:bg-neutral-800 dark:text-amber-400"
+          >
+            Missed
+          </button>
+        </div>
+      </div>
+
+      {sets.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400">
+            Logged
+          </h2>
+          <ul className="flex flex-col gap-1.5">
+            {sets.map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center justify-between gap-2 rounded-xl bg-neutral-100 px-3 py-2 text-sm dark:bg-neutral-800"
+              >
+                <span className="font-medium">
+                  {s.is_warmup ? 'Warm-up' : `Set ${s.set_number}`}
+                </span>
+                <div className="flex items-center gap-3">
+                  <span className="tabular-nums">
+                    {s.weight_lb} lb × {s.reps}
+                    {s.failed ? (
+                      <span className="ml-2 text-amber-600 dark:text-amber-400">missed</span>
+                    ) : (
+                      <span className="ml-2 text-neutral-400">@{s.rir} RIR</span>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeSet(s.id)}
+                    aria-label={`clear set ${s.set_number}`}
+                    className="grid h-6 w-6 place-items-center rounded-full text-neutral-400 hover:bg-neutral-200 hover:text-red-500 dark:hover:bg-neutral-700"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}

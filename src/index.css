@@ -1,0 +1,68 @@
+@import 'tailwindcss';
+
+/* ── Premium matte-black theme ──────────────────────────────────────────────
+   The app is always dark (ignores the OS light/dark setting): `dark:` utilities
+   are class-based and <html> carries the `dark` class. We also remap Tailwind's
+   neutral ramp to a matte-black surface set, so every existing `neutral-*` class
+   across the app picks up the premium palette with no per-component edits.      */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Matte-black surface ramp. */
+  --color-neutral-950: #070809; /* app background (near-black) */
+  --color-neutral-900: #0e0f12; /* sticky header / elevated */
+  --color-neutral-800: #16181d; /* cards, inputs, chips */
+  --color-neutral-700: #232730; /* raised controls */
+  --color-neutral-600: #3b4048;
+  --color-neutral-500: #868d99; /* secondary text */
+  --color-neutral-400: #a4abb6;
+  --color-neutral-300: #c7ccd4;
+  /* NOTE: 100/200 stay LIGHT — they're used as light *text* in dark mode
+     (`dark:text-neutral-100/200`, e.g. the timer + Log-set button). Their
+     background uses (`bg-neutral-100/200`) are always paired with a `dark:bg-*`
+     override, so those pick the dark surface regardless. */
+  --color-neutral-200: #cfd4dc;
+  --color-neutral-100: #e9ecf1;
+  --color-neutral-50: #f3f5f8; /* primary text (near-white) */
+
+  /* Signature accent — CRIMSON. We remap the `emerald-*` tokens the app already
+     uses, so every accent surface (buttons, active tabs/chips, selected rows, PR
+     markers) turns crimson app-wide with no per-component edits. */
+  --color-emerald-600: #e11d48; /* primary accent (white text stays legible) */
+  --color-emerald-500: #f43f5e; /* focus rings / brighter */
+  --color-emerald-400: #fb7185;
+  --color-emerald-100: #ffe4e6; /* selected-row text */
+  --color-emerald-950: #4c0519; /* selected-row tint */
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Data-viz tokens (dark, validated) — the app is always dark. */
+  --viz-surface: #0e0f12;
+  --viz-grid: #23272e;
+  --viz-axis-text: #868d99;
+  --viz-blue: #3987e5;
+  --viz-aqua: #199e70;
+  --viz-good: #e11d48; /* PR markers + gains take the crimson accent */
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #070809;
+  /* A whisper of crimson glow at the top — premium, not loud. */
+  background-image: radial-gradient(120% 55% at 50% -10%, rgba(225, 29, 72, 0.07), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tighter, more confident headings. */
+h1,
+h2 {
+  letter-spacing: -0.015em;
+}

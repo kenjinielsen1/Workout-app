@@ -1,0 +1,14 @@
+# Supabase local/CLI config. `supabase link` + `supabase db push` read this.
+# If your CLI version rejects or extends this file, run `supabase init` once to
+# regenerate it for your version (it won't touch the migrations), then re-apply the
+# project_id below.
+
+project_id = "isnhcaytdmqahgcfneqr"
+
+[db]
+# Match your project's Postgres major version (Supabase projects are 15+).
+major_version = 15
+
+[auth]
+# The schema references auth.users + auth.uid(); Supabase Auth provides them.
+enabled = true
