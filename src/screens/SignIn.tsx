@@ -21,7 +21,7 @@ export function SignIn() {
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 px-6 py-10 text-neutral-900 dark:text-neutral-50">
       <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold">Progressive Overload</h1>
+        <h1 className="text-3xl font-bold">Workout Tracker</h1>
         <p className="text-sm text-neutral-500 dark:text-neutral-400">
           {isSignUp ? 'Create your account' : 'Sign in to keep training'}
         </p>

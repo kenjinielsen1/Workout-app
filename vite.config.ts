@@ -15,10 +15,10 @@ export default defineConfig({
       injectRegister: 'auto', // inject the SW registration script automatically
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Progressive Overload',
-        short_name: 'Overload',
-        description: 'Workout tracker with ML-driven progressive-overload recommendations.',
-        theme_color: '#059669',
+        name: 'Workout Tracker',
+        short_name: 'Workout',
+        description: 'Track your workouts, sets, and progress — with smart next-set targets.',
+        theme_color: '#0a0a0a',
         background_color: '#0a0a0a',
         display: 'standalone',
         start_url: '/',
