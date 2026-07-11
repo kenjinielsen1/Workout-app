@@ -14,7 +14,8 @@
     "seed:sql": "tsx scripts/generate-seed-sql.ts",
     "seed:validate": "tsx scripts/validate-seeds.ts",
     "feature:spec": "tsx scripts/export-feature-spec.ts",
-    "db:check": "node scripts/verify-migrations.mjs"
+    "db:check": "node scripts/verify-migrations.mjs",
+    "export:training": "tsx scripts/export-training-table.ts"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",

@@ -8,14 +8,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
-COPY feature_spec.json .
-COPY train.py .
+COPY . .
 
-# Bake in a starter model so /predict serves real ElasticNet predictions rather
-# than the heuristic fallback. The nightly evaluate/retrain replaces it with one
-# trained on real logged outcomes (and gates it off if it underperforms the rules).
-RUN python train.py --n 4000
+# If the retrain job baked a model into the build context (models/model.joblib),
+# use it. Otherwise train a synthetic starter so /predict always serves real
+# ElasticNet predictions rather than the heuristic fallback.
+RUN [ -f models/model.joblib ] || python train.py --n 4000
 
 ENV MODEL_PATH=/app/models/model.joblib
 EXPOSE 8000
