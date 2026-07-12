@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LogSet, type LogSetExercise, type LogSetProfile, type SessionTarget } from './LogSet';
@@ -26,8 +26,10 @@ const profile: LogSetProfile = {
 const target: SessionTarget = { target_weight_lb: 225, target_reps: 5, target_sets: 3 };
 
 describe('LogSet screen', () => {
+  beforeEach(() => localStorage.clear()); // rest-timer state must not leak across tests
+
   it('shows the target and the plate breakdown for the current weight', () => {
-    render(<LogSet exercise={barbell} profile={profile} target={target} />);
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
     expect(screen.getByText(/Target 225 lb × 5/)).toBeInTheDocument();
     // 225 = bar (45) + 45 + 45 per side
     expect(screen.getByText('bar 45')).toBeInTheDocument();
@@ -37,7 +39,7 @@ describe('LogSet screen', () => {
   it('one-tap "Hit target" logs a set at the target', async () => {
     const onLogSet = vi.fn();
     const user = userEvent.setup();
-    render(<LogSet exercise={barbell} profile={profile} target={target} onLogSet={onLogSet} />);
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} onLogSet={onLogSet} />);
 
     await user.click(screen.getByRole('button', { name: /hit target/i }));
 
@@ -51,7 +53,7 @@ describe('LogSet screen', () => {
 
   it('recomputes plates when the weight changes', async () => {
     const user = userEvent.setup();
-    render(<LogSet exercise={barbell} profile={profile} target={target} />);
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
     // Barbell w/ micro plates steps by 2.5: 225 -> 222.5.
     await user.click(screen.getByRole('button', { name: /decrease weight/i }));
     expect(screen.getByTestId('weight-input')).toHaveValue(222.5);
@@ -63,7 +65,7 @@ describe('LogSet screen', () => {
   it('clears a logged set with its delete button', async () => {
     const onDeleteSet = vi.fn();
     const user = userEvent.setup();
-    render(<LogSet exercise={barbell} profile={profile} target={target} onDeleteSet={onDeleteSet} />);
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} onDeleteSet={onDeleteSet} />);
     await user.click(screen.getByRole('button', { name: /hit target/i }));
     const logged = await screen.findByRole('list');
     expect(within(logged).getByText(/225 lb × 5/)).toBeInTheDocument();
@@ -77,7 +79,7 @@ describe('LogSet screen', () => {
   it('marks a missed set as failed with 0 RIR', async () => {
     const onLogSet = vi.fn();
     const user = userEvent.setup();
-    render(<LogSet exercise={barbell} profile={profile} target={target} onLogSet={onLogSet} />);
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} onLogSet={onLogSet} />);
     await user.click(screen.getByRole('button', { name: /missed/i }));
     expect(onLogSet).toHaveBeenCalledWith(
       expect.objectContaining({ failed: true, rir: 0 }),
@@ -86,7 +88,7 @@ describe('LogSet screen', () => {
 
   it('advances the next set up one increment after beating the target easily', async () => {
     const user = userEvent.setup();
-    render(<LogSet exercise={barbell} profile={profile} target={target} />);
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
     // Log 225 × 7 @ 3 RIR (beat the 5-rep target with room to spare).
     fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '7' } });
     fireEvent.change(screen.getByRole('slider', { name: /reps in reserve/i }), { target: { value: '3' } });
@@ -99,7 +101,7 @@ describe('LogSet screen', () => {
 
   it('backs the next set off after a clear miss', async () => {
     const user = userEvent.setup();
-    render(<LogSet exercise={barbell} profile={profile} target={target} />);
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
     fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '3' } });
     await user.click(screen.getByRole('button', { name: 'Log set' }));
     expect(screen.getByTestId('weight-input')).toHaveValue(222.5); // −2.5
@@ -109,6 +111,7 @@ describe('LogSet screen', () => {
   it('shows the effective-load note for dumbbells instead of plate chips', () => {
     render(
       <LogSet
+        userId="u1"
         exercise={dumbbell}
         profile={profile}
         target={{ target_weight_lb: 60, target_reps: 8, target_sets: 3 }}

@@ -355,3 +355,165 @@ describe('guards', () => {
     expect(() => recommendProgression(increaseCtx({ history: [] }))).toThrow();
   });
 });
+
+// --- Bug 3 acceptance tests (BUGFIXES.md): rep target must PROGRESS, never 8 -
+describe('rep target never defaults to a magic 8', () => {
+  const exForCompound = (isCompound: boolean) => (isCompound ? bench : curl);
+  const GOALS = ['strength', 'hypertrophy', 'endurance'] as const;
+
+  // Deterministic PRNG so failures reproduce.
+  let seed = 123456789;
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)]!;
+  const between = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1));
+
+  it('never-defaults: 10k random last-session states stay in range and are not a constant', () => {
+    const emitted = new Set<number>();
+    for (let i = 0; i < 10_000; i++) {
+      const goal = pick(GOALS);
+      const isCompound = rand() < 0.5;
+      const ex = { ...exForCompound(isCompound), is_compound: isCompound };
+      const range = repRangeForGoal(goal, isCompound);
+      const targetReps = between(range.min, range.max);
+      const weight = between(4, 60) * 5; // 20–300 lb, loadable
+      const reps = between(range.min - 1, range.max + 2); // may miss or exceed target
+      const rir = between(0, 4);
+      const user = { ...experienced, goal, training_age_months: between(1, 60) };
+      const hist: ProgSession[] = [0, 1, 2, 3].map((k) => ({
+        performed_at: d(k),
+        target_reps: targetReps,
+        session_rpe: between(5, 10),
+        sets: nSets(3, weight, reps, rir),
+      }));
+      const r = recommendProgression({
+        exercise: ex,
+        user,
+        history: hist,
+        acwr: 0.8 + rand() * 0.8,
+        daysSinceLast: between(2, 10),
+        sessionsThisExercise: between(1, 40),
+        bestHistoricalE1RM: between(100, 400),
+        sessionsSinceLastDeload: between(0, 6),
+        previousWasFlagged: false,
+      });
+      // Always a real number inside the goal's range — never NaN, never a magic 8.
+      expect(Number.isFinite(r.target_reps)).toBe(true);
+      expect(r.target_reps).toBeGreaterThanOrEqual(range.min);
+      expect(r.target_reps).toBeLessThanOrEqual(range.max);
+      emitted.add(r.target_reps);
+    }
+    // The output genuinely varies with input — not a hardcoded constant.
+    expect(emitted.size).toBeGreaterThan(1);
+    expect(emitted).not.toEqual(new Set([8]));
+  });
+
+  it('goal test: a strength lifter never gets an 8 on a compound', () => {
+    const range = repRangeForGoal('strength', true); // [3,6]
+    for (let target = range.min; target <= range.max; target++) {
+      const hist: ProgSession[] = [0, 1, 2, 3].map((k) => ({
+        performed_at: d(k),
+        target_reps: target,
+        session_rpe: 7,
+        sets: nSets(3, 200, target, 2),
+      }));
+      const r = recommendProgression({
+        exercise: bench,
+        user: { ...experienced, goal: 'strength' },
+        history: hist,
+        acwr: 1.0,
+        daysSinceLast: 5,
+        sessionsThisExercise: 10,
+        bestHistoricalE1RM: 300,
+        sessionsSinceLastDeload: 2,
+        previousWasFlagged: false,
+      });
+      expect(r.target_reps).not.toBe(8);
+      expect(r.target_reps).toBeLessThanOrEqual(6);
+    }
+  });
+
+  it('progression: reps climb by 1 to the top of the range, then load bumps and reps reset', () => {
+    const goal = 'hypertrophy' as const;
+    const range = repRangeForGoal(goal, true); // [6,10]
+    const user = { ...experienced, goal };
+    let weight = 100;
+    let target = range.min;
+    const repsSeen: number[] = [];
+    let sawLoadBumpReset = false;
+
+    for (let session = 0; session < 12; session++) {
+      // Lifter succeeds with room to spare (low RIR reported, strong e1RM trend).
+      const hist: ProgSession[] = [0, 1, 2, 3].map((k) => ({
+        performed_at: d(session + k),
+        target_reps: target,
+        session_rpe: 6,
+        sets: nSets(3, weight + k, target, 4), // rising e1RM, clears increase band
+      }));
+      const r = recommendProgression({
+        exercise: bench,
+        user,
+        history: hist,
+        acwr: 1.0,
+        daysSinceLast: 7,
+        sessionsThisExercise: 8 + session,
+        bestHistoricalE1RM: 500, // headroom, no e1RM cap interference
+        sessionsSinceLastDeload: 1,
+        previousWasFlagged: false,
+      });
+      repsSeen.push(r.target_reps);
+      if (r.action === 'increase_load') {
+        expect(r.target_reps).toBe(range.min); // reset to bottom on a load bump
+        expect(r.target_weight_lb).toBeGreaterThan(weight);
+        sawLoadBumpReset = true;
+        weight = r.target_weight_lb;
+        target = r.target_reps;
+      } else if (r.action === 'add_rep') {
+        expect(r.target_reps).toBe(Math.min(target + 1, range.max));
+        target = r.target_reps;
+      } else {
+        target = r.target_reps;
+      }
+    }
+    // We climbed within the range and eventually hit a load bump that reset reps.
+    expect(Math.max(...repsSeen)).toBe(range.max);
+    expect(sawLoadBumpReset).toBe(true);
+  });
+
+  it('double-progression invariant: load and reps never both rise in the same session', () => {
+    for (const goal of GOALS) {
+      for (const isCompound of [true, false]) {
+        const ex = { ...exForCompound(isCompound), is_compound: isCompound };
+        const range = repRangeForGoal(goal, isCompound);
+        for (let target = range.min; target <= range.max; target++) {
+          // Constant weight within each session; rising across sessions for a
+          // positive e1RM trend. baseWeight anchors to the last session's top.
+          const weights = [140, 145, 150, 155];
+          const hist: ProgSession[] = weights.map((w, k) => ({
+            performed_at: d(k),
+            target_reps: target,
+            session_rpe: 6,
+            sets: nSets(3, w, target, 4),
+          }));
+          const r = recommendProgression({
+            exercise: ex,
+            user: { ...experienced, goal },
+            history: hist,
+            acwr: 1.0,
+            daysSinceLast: 6,
+            sessionsThisExercise: 12,
+            bestHistoricalE1RM: 600,
+            sessionsSinceLastDeload: 1,
+            previousWasFlagged: false,
+          });
+          const lastTop = snapToLoadable(weights[weights.length - 1]!, ex, experienced, 'nearest');
+          const loadUp = r.target_weight_lb > lastTop;
+          const repsUp = r.target_reps > target;
+          expect(loadUp && repsUp).toBe(false);
+        }
+      }
+    }
+  });
+});

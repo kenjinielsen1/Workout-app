@@ -6,7 +6,8 @@
 // supplies the ACWR / fatigue context that engine needs. The shape it returns is
 // exactly what the real recommendation will, so swapping is a one-line change.
 
-import type { Equipment } from './types';
+import { repRangeForGoal } from './progression';
+import type { Equipment, Goal } from './types';
 
 export interface SessionTarget {
   target_weight_lb: number;
@@ -48,8 +49,13 @@ function topWorkingSet(session: TargetSession): TargetSet | null {
 
 export function deriveInitialTarget(
   history: TargetSession[],
-  exercise: { equipment: Equipment },
+  exercise: { equipment: Equipment; is_compound: boolean },
+  goal: Goal,
 ): SessionTarget {
+  // Bottom of the goal's evidence-based rep range — where double progression
+  // starts, so there's maximal room to add reps before load. NEVER a magic 8.
+  const { min: startingReps } = repRangeForGoal(goal, exercise.is_compound);
+
   // Walk back to the most recent session that actually had working sets.
   for (let i = history.length - 1; i >= 0; i--) {
     const top = topWorkingSet(history[i]!);
@@ -65,8 +71,8 @@ export function deriveInitialTarget(
   }
   return {
     target_weight_lb: STARTING_WEIGHT_LB[exercise.equipment],
-    target_reps: 8,
+    target_reps: startingReps,
     target_sets: 3,
-    rationale: 'First time logging this lift — pick a weight you can control for the target reps.',
+    rationale: `First time logging this lift — pick a weight you can control for ${startingReps} reps, the bottom of your ${goal} range.`,
   };
 }

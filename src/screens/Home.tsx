@@ -119,7 +119,7 @@ export function Home() {
       // Prefer a target precomputed at the last session's finish; else compute now.
       const precomputed = (await store.getNextSession(userId, exId)) as FinalTarget | null;
       const fresh = precomputed ?? recommendTarget(all, ex, index, p, null, p.ml_alpha_cap);
-      const shown = fresh ?? deriveInitialTarget(all.filter((s) => s.exercise_id === exId), ex);
+      const shown = fresh ?? deriveInitialTarget(all.filter((s) => s.exercise_id === exId), ex, p.goal);
       setTarget(shown);
 
       if (fresh) {
@@ -333,6 +333,7 @@ export function Home() {
         <div className="flex flex-col">
           <LogSet
             key={selectedId}
+            userId={userId}
             exercise={selected}
             profile={profile}
             target={target}

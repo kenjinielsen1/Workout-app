@@ -21,6 +21,7 @@ from .model import (
     is_cold_start,
     suggested_alpha,
 )
+from .push import router as push_router
 from .schemas import PredictRequest, PredictResponse
 
 app = FastAPI(title="Workout Tracker ML", version="1.0.0")
@@ -37,6 +38,10 @@ app.add_middleware(
 
 # Loaded once at import; reload by restarting the process after a retrain.
 MODEL = E1RMModel.load()
+
+# Web Push: schedule/cancel rest-complete notifications (fires while the phone is
+# locked). Needs an always-on machine so the scheduled task survives to send.
+app.include_router(push_router)
 
 
 @app.get("/health")

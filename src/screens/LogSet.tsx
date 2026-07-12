@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { effectiveLoad } from '../lib/effectiveLoad';
 import { equipmentIncrement } from '../lib/rounding';
 import { plateLoadout } from '../lib/plateMath';
@@ -7,6 +7,7 @@ import type { Equipment, LoadType } from '../lib/types';
 import { NumberStepper } from '../components/NumberStepper';
 import { RirSlider } from '../components/RirSlider';
 import { PlateChips } from '../components/PlateChips';
+import { useRestTimer } from '../hooks/useRestTimer';
 
 export interface LogSetExercise {
   name: string;
@@ -40,6 +41,7 @@ export interface LoggedSet {
 }
 
 interface LogSetProps {
+  userId: string;
   exercise: LogSetExercise;
   profile: LogSetProfile;
   target: SessionTarget;
@@ -65,7 +67,7 @@ function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfil
   }
 }
 
-export function LogSet({ exercise, profile, target, onLogSet, onDeleteSet }: LogSetProps) {
+export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSet }: LogSetProps) {
   const weightStep = equipmentIncrement(exercise, profile);
   const [weight, setWeight] = useState(target.target_weight_lb);
   const [reps, setReps] = useState(target.target_reps);
@@ -73,7 +75,6 @@ export function LogSet({ exercise, profile, target, onLogSet, onDeleteSet }: Log
   const [isWarmup, setIsWarmup] = useState(false);
   const [sets, setSets] = useState<LoggedSet[]>([]);
   const [nextNote, setNextNote] = useState<string | null>(null);
-  const [rest, setRest] = useState<number | null>(null);
 
   const plates = useMemo(
     () => plateLoadout(weight, exercise, profile),
@@ -81,13 +82,9 @@ export function LogSet({ exercise, profile, target, onLogSet, onDeleteSet }: Log
   );
   const workingCount = sets.filter((s) => !s.is_warmup).length;
 
-  // Rest countdown — pure local ticking, no network.
-  const resting = rest !== null && rest > 0;
-  useEffect(() => {
-    if (!resting) return;
-    const id = setInterval(() => setRest((r) => (r && r > 0 ? r - 1 : 0)), 1000);
-    return () => clearInterval(id);
-  }, [resting]);
+  // Wall-clock rest timer: survives lock/close and notifies at zero (BUGFIXES.md).
+  const timer = useRestTimer(userId);
+  const showTimer = timer.resting || timer.done;
 
   const removeSet = (id: string) => {
     setSets((prev) => prev.filter((s) => s.id !== id));
@@ -111,7 +108,7 @@ export function LogSet({ exercise, profile, target, onLogSet, onDeleteSet }: Log
       setWeight(next.weight_lb);
       setReps(next.target_reps);
       setNextNote(next.note);
-      setRest(next.rest_seconds);
+      timer.start(next.rest_seconds, exercise.name);
     }
   };
 
@@ -160,20 +157,36 @@ export function LogSet({ exercise, profile, target, onLogSet, onDeleteSet }: Log
             <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Next set</span>
             <span className="text-sm font-semibold">{nextNote}</span>
           </div>
-          {rest !== null && (
+          {showTimer && (
             <button
               type="button"
-              onClick={() => setRest(null)}
+              onClick={timer.dismiss}
               aria-label="rest timer"
               className={`rounded-xl px-3 py-2 text-lg font-bold tabular-nums ${
-                resting ? 'bg-emerald-600 text-white' : 'bg-neutral-200 text-neutral-500 dark:bg-neutral-700'
+                timer.resting ? 'bg-emerald-600 text-white' : 'bg-neutral-200 text-neutral-500 dark:bg-neutral-700'
               }`}
             >
-              {resting ? formatRest(rest) : 'rest done'}
+              {timer.resting ? formatRest(timer.remaining) : 'rest done'}
             </button>
           )}
         </div>
       )}
+
+      {timer.resting && timer.capability.needsInstall && (
+        <p className="-mt-2 text-xs leading-snug text-amber-700 dark:text-amber-400">
+          Add this app to your Home Screen to get a rest-complete alert while your
+          phone is locked — Safari tabs can’t send notifications on iOS.
+        </p>
+      )}
+      {timer.resting &&
+        !timer.capability.needsInstall &&
+        timer.capability.supported &&
+        timer.capability.permission === 'denied' && (
+          <p className="-mt-2 text-xs leading-snug text-neutral-500 dark:text-neutral-400">
+            Notifications are off, so the timer only alerts while the app is open.
+            Enable notifications to be pinged when rest ends.
+          </p>
+        )}
 
       <NumberStepper
         label="Weight"

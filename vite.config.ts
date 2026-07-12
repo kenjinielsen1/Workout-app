@@ -30,6 +30,9 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
         navigateFallback: '/index.html',
+        // Pull in the Web Push handlers (push + notificationclick) so rest-complete
+        // alerts fire while the phone is locked. Served from public/push-sw.js.
+        importScripts: ['push-sw.js'],
       },
       devOptions: { enabled: false }, // no SW in dev / tests
     }),
@@ -41,7 +44,12 @@ export default defineConfig({
     environment: 'node',
     // Tests always run in demo mode, independent of a developer's .env.local
     // (which now carries real Supabase vars).
-    env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '', VITE_ML_URL: '' },
+    env: {
+      VITE_SUPABASE_URL: '',
+      VITE_SUPABASE_ANON_KEY: '',
+      VITE_ML_URL: '',
+      VITE_VAPID_PUBLIC_KEY: '',
+    },
     // globals: true so React Testing Library registers its afterEach cleanup —
     // otherwise renders leak across tests in the same file.
     globals: true,

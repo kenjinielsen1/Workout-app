@@ -4,3 +4,5 @@ pydantic>=2.7
 numpy>=2.0
 scikit-learn>=1.5
 joblib>=1.4
+pywebpush>=1.14
+cryptography>=42
