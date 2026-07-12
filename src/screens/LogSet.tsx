@@ -96,7 +96,10 @@ export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSe
     setSets((prev) => [...prev, logged]);
     onLogSet?.(logged);
 
-    // LIVE within-session autoregulation: advance the next set instantly, locally.
+    // LIVE within-session autoregulation → STRAIGHT SETS: hold the inputs at the
+    // session target so every set is a one-tap "Hit target". We never chase the
+    // weight UP mid-session; we only auto-*lower* it after a clear miss (a safety
+    // net), which is the one case worth deviating from the target for.
     if (!s.is_warmup) {
       const next = nextSetTarget({
         currentWeight: s.weight_lb,
@@ -105,9 +108,10 @@ export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSe
         exercise,
         profile,
       });
-      setWeight(next.weight_lb);
-      setReps(next.target_reps);
-      setNextNote(next.note);
+      const backedOff = next.weight_lb < target.target_weight_lb;
+      setWeight(backedOff ? next.weight_lb : target.target_weight_lb);
+      setReps(target.target_reps);
+      setNextNote(backedOff ? next.note : 'On target — just tap Hit target for the next set.');
       timer.start(next.rest_seconds, exercise.name);
     }
   };

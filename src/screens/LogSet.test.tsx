@@ -86,7 +86,7 @@ describe('LogSet screen', () => {
     );
   });
 
-  it('advances the next set up one increment after beating the target easily', async () => {
+  it('holds at the target for straight sets after beating it (no upward chase)', async () => {
     const user = userEvent.setup();
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
     // Log 225 × 7 @ 3 RIR (beat the 5-rep target with room to spare).
@@ -94,12 +94,14 @@ describe('LogSet screen', () => {
     fireEvent.change(screen.getByRole('slider', { name: /reps in reserve/i }), { target: { value: '3' } });
     await user.click(screen.getByRole('button', { name: 'Log set' }));
 
-    expect(screen.getByTestId('weight-input')).toHaveValue(227.5); // +2.5
-    expect(screen.getByText(/up one increment/i)).toBeInTheDocument();
+    // Inputs stay pinned to the session target so the next set is one tap.
+    expect(screen.getByTestId('weight-input')).toHaveValue(225);
+    expect(screen.getByTestId('reps-input')).toHaveValue(5);
+    expect(screen.getByText(/just tap Hit target/i)).toBeInTheDocument();
     expect(screen.getByText('2:00')).toBeInTheDocument(); // rest timer, rir 3 → 120s
   });
 
-  it('backs the next set off after a clear miss', async () => {
+  it('still auto-backs-off the weight after a clear miss (safety net)', async () => {
     const user = userEvent.setup();
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
     fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '3' } });
