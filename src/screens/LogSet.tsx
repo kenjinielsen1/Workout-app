@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { effectiveLoad } from '../lib/effectiveLoad';
 import { equipmentIncrement } from '../lib/rounding';
 import { plateLoadout } from '../lib/plateMath';
@@ -86,6 +86,18 @@ export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSe
   const timer = useRestTimer(userId);
   const showTimer = timer.resting || timer.done;
 
+  // Keep the inputs on the target until the first set is logged. Switching
+  // exercises recomputes the target asynchronously, so the fresh number arrives
+  // *after* this screen has mounted with the previous lift's values — without
+  // this sync you'd have to re-enter weight/reps by hand every time you switch.
+  // Once a set is logged, set-to-set autoregulation owns the inputs, so we stop.
+  useEffect(() => {
+    if (sets.length === 0) {
+      setWeight(target.target_weight_lb);
+      setReps(target.target_reps);
+    }
+  }, [target.target_weight_lb, target.target_reps, sets.length]);
+
   const removeSet = (id: string) => {
     setSets((prev) => prev.filter((s) => s.id !== id));
     onDeleteSet?.(id);
@@ -96,10 +108,7 @@ export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSe
     setSets((prev) => [...prev, logged]);
     onLogSet?.(logged);
 
-    // LIVE within-session autoregulation → STRAIGHT SETS: hold the inputs at the
-    // session target so every set is a one-tap "Hit target". We never chase the
-    // weight UP mid-session; we only auto-*lower* it after a clear miss (a safety
-    // net), which is the one case worth deviating from the target for.
+    // LIVE within-session autoregulation: advance the next set instantly, locally.
     if (!s.is_warmup) {
       const next = nextSetTarget({
         currentWeight: s.weight_lb,
@@ -108,10 +117,9 @@ export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSe
         exercise,
         profile,
       });
-      const backedOff = next.weight_lb < target.target_weight_lb;
-      setWeight(backedOff ? next.weight_lb : target.target_weight_lb);
-      setReps(target.target_reps);
-      setNextNote(backedOff ? next.note : 'On target — just tap Hit target for the next set.');
+      setWeight(next.weight_lb);
+      setReps(next.target_reps);
+      setNextNote(next.note);
       timer.start(next.rest_seconds, exercise.name);
     }
   };

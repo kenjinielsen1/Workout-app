@@ -86,7 +86,7 @@ describe('LogSet screen', () => {
     );
   });
 
-  it('holds at the target for straight sets after beating it (no upward chase)', async () => {
+  it('advances the next set up one increment after beating the target easily', async () => {
     const user = userEvent.setup();
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
     // Log 225 × 7 @ 3 RIR (beat the 5-rep target with room to spare).
@@ -94,20 +94,61 @@ describe('LogSet screen', () => {
     fireEvent.change(screen.getByRole('slider', { name: /reps in reserve/i }), { target: { value: '3' } });
     await user.click(screen.getByRole('button', { name: 'Log set' }));
 
-    // Inputs stay pinned to the session target so the next set is one tap.
-    expect(screen.getByTestId('weight-input')).toHaveValue(225);
-    expect(screen.getByTestId('reps-input')).toHaveValue(5);
-    expect(screen.getByText(/just tap Hit target/i)).toBeInTheDocument();
+    expect(screen.getByTestId('weight-input')).toHaveValue(227.5); // +2.5
+    expect(screen.getByText(/up one increment/i)).toBeInTheDocument();
     expect(screen.getByText('2:00')).toBeInTheDocument(); // rest timer, rir 3 → 120s
   });
 
-  it('still auto-backs-off the weight after a clear miss (safety net)', async () => {
+  it('backs the next set off after a clear miss', async () => {
     const user = userEvent.setup();
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
     fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '3' } });
     await user.click(screen.getByRole('button', { name: 'Log set' }));
     expect(screen.getByTestId('weight-input')).toHaveValue(222.5); // −2.5
     expect(screen.getByText(/backing off/i)).toBeInTheDocument();
+  });
+
+  it('refreshes weight/reps when the target changes (e.g. switching exercises)', () => {
+    const { rerender } = render(
+      <LogSet userId="u1" exercise={barbell} profile={profile} target={target} />,
+    );
+    expect(screen.getByTestId('weight-input')).toHaveValue(225);
+    expect(screen.getByTestId('reps-input')).toHaveValue(5);
+
+    // Fresh target arrives (async, after switching to another lift).
+    rerender(
+      <LogSet
+        userId="u1"
+        exercise={barbell}
+        profile={profile}
+        target={{ target_weight_lb: 135, target_reps: 8, target_sets: 3 }}
+      />,
+    );
+    expect(screen.getByTestId('weight-input')).toHaveValue(135);
+    expect(screen.getByTestId('reps-input')).toHaveValue(8);
+  });
+
+  it('does not clobber the autoregulated inputs once a set is logged', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <LogSet userId="u1" exercise={barbell} profile={profile} target={target} />,
+    );
+    // Beat the target → autoregulation bumps to 227.5.
+    fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '7' } });
+    fireEvent.change(screen.getByRole('slider', { name: /reps in reserve/i }), { target: { value: '3' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.getByTestId('weight-input')).toHaveValue(227.5);
+
+    // A late target refinement must NOT overwrite the in-progress set weight.
+    rerender(
+      <LogSet
+        userId="u1"
+        exercise={barbell}
+        profile={profile}
+        target={{ target_weight_lb: 999, target_reps: 2, target_sets: 3 }}
+      />,
+    );
+    expect(screen.getByTestId('weight-input')).toHaveValue(227.5);
   });
 
   it('shows the effective-load note for dumbbells instead of plate chips', () => {
