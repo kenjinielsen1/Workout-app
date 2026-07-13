@@ -2,7 +2,7 @@
 // app boots and a full workout is logged from here with zero network.
 
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Exercise, LoggedSet, Profile, Recommendation, Workout } from './domain';
+import type { Exercise, ExerciseOverride, LoggedSet, Profile, Recommendation, Workout } from './domain';
 import type { SessionTarget } from '../lib/target';
 
 /** A queued mutation awaiting idempotent replay to the remote (Supabase). */
@@ -13,7 +13,13 @@ export type SyncOp =
   | { seq?: number; kind: 'outcome'; payload: { id: string; accepted: boolean; outcome: Recommendation['actual_outcome'] } }
   | { seq?: number; kind: 'profile'; payload: Profile }
   | { seq?: number; kind: 'exercise'; payload: Exercise }
+  | { seq?: number; kind: 'override'; payload: ExerciseOverride }
   | { seq?: number; kind: 'delete-set'; payload: { id: string } };
+
+/** Local storage row for a per-user machine override (composite key). */
+export interface OverrideRow extends ExerciseOverride {
+  key: string; // `${user_id}::${exercise_id}`
+}
 
 export interface NextSessionRow {
   key: string; // `${user_id}::${exercise_id}`
@@ -35,31 +41,39 @@ export interface PODB extends DBSchema {
   profiles: { key: string; value: Profile };
   recommendations: { key: string; value: Recommendation; indexes: { by_user: string } };
   next_sessions: { key: string; value: NextSessionRow };
+  overrides: { key: string; value: OverrideRow; indexes: { by_user: string } };
   sync_queue: { key: number; value: SyncOp };
 }
 
 export type PODatabase = IDBPDatabase<PODB>;
 
 export function openPODB(name = 'progressive-overload'): Promise<PODatabase> {
-  return openDB<PODB>(name, 1, {
-    upgrade(db) {
-      db.createObjectStore('exercises', { keyPath: 'id' });
-      db.createObjectStore('aliases', { keyPath: 'exercise_id' });
+  return openDB<PODB>(name, 2, {
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1) {
+        db.createObjectStore('exercises', { keyPath: 'id' });
+        db.createObjectStore('aliases', { keyPath: 'exercise_id' });
 
-      const workouts = db.createObjectStore('workouts', { keyPath: 'id' });
-      workouts.createIndex('by_user', 'user_id');
+        const workouts = db.createObjectStore('workouts', { keyPath: 'id' });
+        workouts.createIndex('by_user', 'user_id');
 
-      const sets = db.createObjectStore('sets', { keyPath: 'id' });
-      sets.createIndex('by_workout', 'workout_id');
-      sets.createIndex('by_exercise', 'exercise_id');
+        const sets = db.createObjectStore('sets', { keyPath: 'id' });
+        sets.createIndex('by_workout', 'workout_id');
+        sets.createIndex('by_exercise', 'exercise_id');
 
-      db.createObjectStore('profiles', { keyPath: 'user_id' });
+        db.createObjectStore('profiles', { keyPath: 'user_id' });
 
-      const recs = db.createObjectStore('recommendations', { keyPath: 'id' });
-      recs.createIndex('by_user', 'user_id');
+        const recs = db.createObjectStore('recommendations', { keyPath: 'id' });
+        recs.createIndex('by_user', 'user_id');
 
-      db.createObjectStore('next_sessions', { keyPath: 'key' });
-      db.createObjectStore('sync_queue', { keyPath: 'seq', autoIncrement: true });
+        db.createObjectStore('next_sessions', { keyPath: 'key' });
+        db.createObjectStore('sync_queue', { keyPath: 'seq', autoIncrement: true });
+      }
+      if (oldVersion < 2) {
+        // INCREMENTS.md — per-user machine overrides.
+        const overrides = db.createObjectStore('overrides', { keyPath: 'key' });
+        overrides.createIndex('by_user', 'user_id');
+      }
     },
   });
 }

@@ -6,6 +6,7 @@ import type {
   AllSession,
   CreateExerciseInput,
   Exercise,
+  ExerciseOverride,
   LoggedSession,
   OutcomeJson,
   PlateauChoice,
@@ -60,6 +61,10 @@ export interface WorkoutStore {
 
   /** Every session across all exercises (for movement-pattern ACWR + ML features). */
   getAllSessions(userId: string): Promise<AllSession[]>;
+
+  /** Per-user machine increment/min overrides (INCREMENTS.md). */
+  getOverrides(userId: string): Promise<ExerciseOverride[]>;
+  setOverride(userId: string, exerciseId: string, patch: Pick<ExerciseOverride, 'weight_increment_lb' | 'weight_stack_min_lb'>): Promise<void>;
 
   /** Open (or reuse) a workout to log sets into. Optional session-start check-in
    *  (FEATURES.md #2) is stored on the workout. */

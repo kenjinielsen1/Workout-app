@@ -13,7 +13,7 @@ import { groupAllSessions, groupSetsIntoSessions } from './mappers';
 import { PROFILE_DEFAULTS } from './dbTypes';
 import { demoHistory, seedExercises } from './seedCatalog';
 import type {
-  AllSession, CreateExerciseInput, Exercise, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, PlateauChoice, Workout, WorkoutCheckin,
+  AllSession, CreateExerciseInput, Exercise, ExerciseOverride, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, PlateauChoice, Workout, WorkoutCheckin,
 } from './domain';
 import { slugify } from '../lib/newExercise';
 import type { LogSetInput, SaveRecommendationInput, WorkoutStore } from './store';
@@ -106,6 +106,28 @@ export class LocalFirstStore implements WorkoutStore {
     await this.ready;
     const all = await this.db.getAll('exercises');
     return all.filter((e) => e.is_system || e.owner_id === userId);
+  }
+
+  async getOverrides(userId: string): Promise<ExerciseOverride[]> {
+    await this.ready;
+    const rows = await this.db.getAllFromIndex('overrides', 'by_user', userId);
+    return rows.map(({ key: _key, ...o }) => o);
+  }
+
+  async setOverride(
+    userId: string,
+    exerciseId: string,
+    patch: Pick<ExerciseOverride, 'weight_increment_lb' | 'weight_stack_min_lb'>,
+  ): Promise<void> {
+    await this.ready;
+    const override: ExerciseOverride = {
+      user_id: userId,
+      exercise_id: exerciseId,
+      weight_increment_lb: patch.weight_increment_lb ?? null,
+      weight_stack_min_lb: patch.weight_stack_min_lb ?? null,
+    };
+    await this.db.put('overrides', { key: `${userId}::${exerciseId}`, ...override });
+    await this.enqueue({ kind: 'override', payload: override });
   }
 
   async listSearchable(userId: string): Promise<SearchableExercise[]> {
@@ -289,6 +311,7 @@ export class LocalFirstStore implements WorkoutStore {
             case 'outcome': await remote.pushOutcome(op.payload.id, op.payload.accepted, op.payload.outcome); break;
             case 'profile': await remote.pushProfile(op.payload); break;
             case 'exercise': await remote.pushExercise(op.payload); break;
+            case 'override': await remote.pushOverride(op.payload); break;
             case 'delete-set': await remote.deleteSet(op.payload.id); break;
           }
           if (op.seq !== undefined) await this.db.delete('sync_queue', op.seq);

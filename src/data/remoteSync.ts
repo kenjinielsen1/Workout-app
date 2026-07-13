@@ -3,7 +3,7 @@
 // already synced simply overwrites itself (last-write-wins, single user/device).
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Exercise, OutcomeJson, Profile, Recommendation, Workout, LoggedSet } from './domain';
+import type { Exercise, ExerciseOverride, OutcomeJson, Profile, Recommendation, Workout, LoggedSet } from './domain';
 
 export interface RemoteSync {
   pushWorkout(w: Workout): Promise<void>;
@@ -12,6 +12,7 @@ export interface RemoteSync {
   pushOutcome(id: string, accepted: boolean, outcome: OutcomeJson | null): Promise<void>;
   pushProfile(p: Profile): Promise<void>;
   pushExercise(e: Exercise): Promise<void>;
+  pushOverride(o: ExerciseOverride): Promise<void>;
   deleteSet(id: string): Promise<void>;
 }
 
@@ -71,6 +72,13 @@ export class SupabaseRemoteSync implements RemoteSync {
   async deleteSet(id: string): Promise<void> {
     const { error } = await this.db.from('sets').delete().eq('id', id);
     if (error) throw error;
+  }
+
+  pushOverride(o: ExerciseOverride): Promise<void> {
+    return this.upsert('user_exercise_overrides', {
+      user_id: o.user_id, exercise_id: o.exercise_id,
+      weight_increment_lb: o.weight_increment_lb, weight_stack_min_lb: o.weight_stack_min_lb,
+    }, 'user_id,exercise_id');
   }
 
   pushExercise(e: Exercise): Promise<void> {

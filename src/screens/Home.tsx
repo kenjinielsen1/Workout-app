@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { useStore } from '../data/StoreProvider';
-import type { AllSession, CreateExerciseInput, Exercise, Profile } from '../data/domain';
+import type { AllSession, CreateExerciseInput, Exercise, ExerciseOverride, Profile } from '../data/domain';
 import { deriveInitialTarget, type SessionTarget } from '../lib/target';
 import { exerciseFeatures, recommendTarget, sessionsForExercise } from '../lib/recommend';
 import { isMLConfigured, predict } from '../lib/mlClient';
 import type { FinalTarget, MLPrediction } from '../lib/blend';
 import { bestSetE1RM, recentSessions, summarize } from '../lib/exerciseStats';
 import { dailyReadiness, repRangeForGoal, shiftedRepRange, type DailyCheckin } from '../lib/progression';
-import { snapToLoadable } from '../lib/rounding';
+import { equipmentIncrement, snapToLoadable } from '../lib/rounding';
 import { variantsOf } from '../lib/variants';
 import { formatDuration } from '../lib/liveProgression';
 import { LogSet, type LoggedSet } from './LogSet';
@@ -17,6 +17,7 @@ import { ExercisePicker, type PickerExercise } from '../components/ExercisePicke
 import { WorkoutLog, type WorkoutLogEntry } from '../components/WorkoutLog';
 import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCheckIn';
 import { PlateauCard } from '../components/PlateauCard';
+import { IncrementPrompt } from '../components/IncrementPrompt';
 import type { PlateauChoice } from '../data/domain';
 import { Settings } from './Settings';
 
@@ -54,7 +55,26 @@ export function Home() {
   const setCounter = useRef(0);
   const recommendationId = useRef<string | null>(null);
 
-  const index = useMemo(() => new Map(exercises.map((e) => [e.id, e] as const)), [exercises]);
+  // Per-user machine increment overrides (INCREMENTS.md), merged onto exercises so
+  // every downstream rounding call (recommendation, warm-up, live) is loadable at
+  // THIS gym.
+  const [overrides, setOverrides] = useState<Map<string, ExerciseOverride>>(new Map());
+  const resolvedExercises = useMemo(
+    () =>
+      exercises.map((e) => {
+        const o = overrides.get(e.id);
+        return o
+          ? {
+              ...e,
+              weight_increment_lb: o.weight_increment_lb ?? e.weight_increment_lb ?? null,
+              weight_stack_min_lb: o.weight_stack_min_lb ?? e.weight_stack_min_lb ?? null,
+            }
+          : e;
+      }),
+    [exercises, overrides],
+  );
+
+  const index = useMemo(() => new Map(resolvedExercises.map((e) => [e.id, e] as const)), [resolvedExercises]);
 
   // Resume a workout timer that was running before a reload.
   useEffect(() => {
@@ -118,18 +138,20 @@ export function Home() {
     localStorage.removeItem(timerKey);
   }, [timerKey]);
 
-  // Load catalog (+ aliases for search) + profile once.
+  // Load catalog (+ aliases for search) + profile + overrides once.
   useEffect(() => {
     let active = true;
     Promise.all([
       store.listExercises(userId),
       store.getProfile(userId),
       store.listSearchable(userId),
-    ]).then(([ex, p, searchable]) => {
+      store.getOverrides(userId),
+    ]).then(([ex, p, searchable, ovr]) => {
       if (!active) return;
       setExercises(ex);
       setProfile(p);
       setAliasById(new Map(searchable.map((s) => [s.id, s.aliases])));
+      setOverrides(new Map(ovr.map((o) => [o.exercise_id, o])));
       setSelectedId((cur) => cur || ex[0]?.id || '');
     });
     return () => {
@@ -151,7 +173,7 @@ export function Home() {
   // Compute the recommendation for `exId`: rule engine → optional ML blend → rails.
   const computeTarget = useCallback(
     async (exId: string, p: Profile) => {
-      const ex = exercises.find((e) => e.id === exId);
+      const ex = resolvedExercises.find((e) => e.id === exId);
       if (!ex) return;
       const all = await store.getAllSessions(userId);
       setAllSessions(all);
@@ -199,7 +221,7 @@ export function Home() {
         });
       }
     },
-    [store, userId, exercises, index, readinessValue],
+    [store, userId, resolvedExercises, index, readinessValue],
   );
 
   // Recompute when the exercise changes (or once everything has loaded).
@@ -233,9 +255,44 @@ export function Home() {
       });
       setAllSessions(await store.getAllSessions(userId)); // refresh detail; target holds
       void store.flush(); // sync to Supabase within ~a second (no-op offline/demo)
+
+      // One-time INCREMENTS.md calibration: first working set on a cable/machine
+      // with no override yet → ask the machine's real step so future targets are
+      // selectable at this gym.
+      const ex = index.get(selectedId);
+      const isMachine = ex?.equipment === 'cable' || ex?.equipment === 'machine_selectorized';
+      const promptedKey = `po:incPrompted:${userId}:${selectedId}`;
+      if (
+        !logged.is_warmup &&
+        isMachine &&
+        !overrides.has(selectedId) &&
+        !localStorage.getItem(promptedKey)
+      ) {
+        setIncrementPromptFor(selectedId);
+      }
     },
-    [store, userId, selectedId, startTimerIfNeeded, checkin, readinessValue],
+    [store, userId, selectedId, startTimerIfNeeded, checkin, readinessValue, index, overrides],
   );
+
+  const [incrementPromptFor, setIncrementPromptFor] = useState<string | null>(null);
+
+  const saveIncrement = useCallback(
+    async (increment: number, min: number | null) => {
+      const exId = incrementPromptFor;
+      if (!exId) return;
+      localStorage.setItem(`po:incPrompted:${userId}:${exId}`, '1');
+      setIncrementPromptFor(null);
+      await store.setOverride(userId, exId, { weight_increment_lb: increment, weight_stack_min_lb: min });
+      setOverrides((m) => new Map(m).set(exId, { user_id: userId, exercise_id: exId, weight_increment_lb: increment, weight_stack_min_lb: min }));
+      void store.flush();
+    },
+    [store, userId, incrementPromptFor],
+  );
+
+  const skipIncrement = useCallback(() => {
+    if (incrementPromptFor) localStorage.setItem(`po:incPrompted:${userId}:${incrementPromptFor}`, '1');
+    setIncrementPromptFor(null);
+  }, [userId, incrementPromptFor]);
 
   const handleSaveSettings = useCallback(
     async (patch: Partial<Profile>) => {
@@ -267,7 +324,7 @@ export function Home() {
   );
 
   const finishSession = useCallback(async () => {
-    const ex = exercises.find((e) => e.id === selectedId);
+    const ex = resolvedExercises.find((e) => e.id === selectedId);
     // Close the loop: record what actually happened against the recommendation.
     if (recommendationId.current && workoutId.current && profile && ex && target) {
       const all = await store.getAllSessions(userId);
@@ -301,9 +358,9 @@ export function Home() {
     void store.flush(); // push the session's sets/recommendation/outcome now
     stopTimer(); // end the workout clock
     setTab('detail');
-  }, [store, userId, exercises, index, selectedId, profile, target, computeTarget, stopTimer]);
+  }, [store, userId, resolvedExercises, index, selectedId, profile, target, computeTarget, stopTimer]);
 
-  const selected = exercises.find((e) => e.id === selectedId);
+  const selected = resolvedExercises.find((e) => e.id === selectedId);
   const detailSessions = allSessions.filter((s) => s.exercise_id === selectedId);
 
   // Historical best e1RM for the selected lift, for live PR flagging (FEATURES.md #4).
@@ -493,6 +550,15 @@ export function Home() {
 
       {settingsOpen && (
         <Settings profile={profile} onSave={handleSaveSettings} onClose={() => setSettingsOpen(false)} />
+      )}
+
+      {incrementPromptFor && index.get(incrementPromptFor) && (
+        <IncrementPrompt
+          exerciseName={index.get(incrementPromptFor)!.name}
+          defaultIncrement={equipmentIncrement(index.get(incrementPromptFor)!, profile ?? { has_micro_plates: false, dumbbell_increment_lb: 5 })}
+          onSave={saveIncrement}
+          onSkip={skipIncrement}
+        />
       )}
     </div>
   );

@@ -3,7 +3,7 @@ import { LocalFirstStore, DEMO_LOCAL_USER } from './localStore';
 import type { RemoteSync } from './remoteSync';
 import type { RemoteSource } from './remoteSource';
 import { seedExercises } from './seedCatalog';
-import type { LoggedSet, OutcomeJson, Profile, Recommendation, Workout } from './domain';
+import type { ExerciseOverride, LoggedSet, OutcomeJson, Profile, Recommendation, Workout } from './domain';
 
 const dbName = () => `test-${crypto.randomUUID()}`;
 const U = 'user-1';
@@ -21,6 +21,8 @@ class MockRemote implements RemoteSync {
   async pushOutcome() { this.guard(); }
   async pushProfile(p: Profile) { this.guard(); this.profiles.set(p.user_id, p); }
   async pushExercise() { this.guard(); }
+  overrides = new Map<string, ExerciseOverride>();
+  async pushOverride(o: ExerciseOverride) { this.guard(); this.overrides.set(`${o.user_id}::${o.exercise_id}`, o); }
   async deleteSet() { this.guard(); }
   private guard() { if (this.fail) throw new Error('offline'); this.calls++; }
 }
@@ -84,6 +86,29 @@ describe('clearing a logged set', () => {
     await store.deleteSet('set-y');
     expect(await store.pendingSyncCount()).toBe(1); // a delete-set op
     expect(await store.flush()).toBe(1);
+  });
+});
+
+describe('per-machine overrides (INCREMENTS.md)', () => {
+  it('stores an override locally and syncs it to the remote', async () => {
+    const remote = new MockRemote();
+    const store = new LocalFirstStore({ dbName: dbName(), remote });
+    await store.setOverride(U, 'cable-row', { weight_increment_lb: 7, weight_stack_min_lb: 21 });
+
+    const local = await store.getOverrides(U);
+    expect(local).toEqual([
+      { user_id: U, exercise_id: 'cable-row', weight_increment_lb: 7, weight_stack_min_lb: 21 },
+    ]);
+
+    await store.flush();
+    expect(remote.overrides.get(`${U}::cable-row`)).toMatchObject({ weight_increment_lb: 7, weight_stack_min_lb: 21 });
+  });
+
+  it('scopes overrides to the user', async () => {
+    const store = new LocalFirstStore({ dbName: dbName() });
+    await store.setOverride(U, 'a', { weight_increment_lb: 5, weight_stack_min_lb: null });
+    await store.setOverride('other-user', 'b', { weight_increment_lb: 9, weight_stack_min_lb: null });
+    expect((await store.getOverrides(U)).map((o) => o.exercise_id)).toEqual(['a']);
   });
 });
 

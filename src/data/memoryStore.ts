@@ -9,6 +9,7 @@ import type {
   AllSession,
   CreateExerciseInput,
   Exercise,
+  ExerciseOverride,
   LoggedSession,
   LoggedSet,
   OutcomeJson,
@@ -51,6 +52,7 @@ export class InMemoryWorkoutStore implements WorkoutStore {
   private sets: LoggedSet[] = [];
   private profiles = new Map<string, Profile>();
   private recommendations = new Map<string, Recommendation>();
+  private overrides = new Map<string, ExerciseOverride>();
 
   constructor() {
     this.exercises = SEED.map((s) => {
@@ -98,6 +100,23 @@ export class InMemoryWorkoutStore implements WorkoutStore {
 
   async listExercises(userId: string): Promise<Exercise[]> {
     return this.exercises.filter((e) => e.is_system || e.owner_id === userId);
+  }
+
+  async getOverrides(userId: string): Promise<ExerciseOverride[]> {
+    return [...this.overrides.values()].filter((o) => o.user_id === userId);
+  }
+
+  async setOverride(
+    userId: string,
+    exerciseId: string,
+    patch: Pick<ExerciseOverride, 'weight_increment_lb' | 'weight_stack_min_lb'>,
+  ): Promise<void> {
+    this.overrides.set(`${userId}::${exerciseId}`, {
+      user_id: userId,
+      exercise_id: exerciseId,
+      weight_increment_lb: patch.weight_increment_lb ?? null,
+      weight_stack_min_lb: patch.weight_stack_min_lb ?? null,
+    });
   }
 
   async listSearchable(userId: string): Promise<SearchableExercise[]> {

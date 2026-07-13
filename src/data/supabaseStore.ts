@@ -23,6 +23,7 @@ import type {
   AllSession,
   CreateExerciseInput,
   Exercise,
+  ExerciseOverride,
   LoggedSession,
   OutcomeJson,
   PlateauChoice,
@@ -61,6 +62,37 @@ export class SupabaseWorkoutStore implements WorkoutStore {
     const { data, error } = await this.db.from('exercises').select('*').order('name');
     if (error) throw error;
     return (data as ExerciseRow[]).map(rowToExercise);
+  }
+
+  async getOverrides(userId: string): Promise<ExerciseOverride[]> {
+    const { data, error } = await this.db
+      .from('user_exercise_overrides')
+      .select('user_id,exercise_id,weight_increment_lb,weight_stack_min_lb')
+      .eq('user_id', userId);
+    if (error) throw error;
+    return (data as ExerciseOverride[]).map((o) => ({
+      user_id: o.user_id,
+      exercise_id: o.exercise_id,
+      weight_increment_lb: o.weight_increment_lb == null ? null : Number(o.weight_increment_lb),
+      weight_stack_min_lb: o.weight_stack_min_lb == null ? null : Number(o.weight_stack_min_lb),
+    }));
+  }
+
+  async setOverride(
+    userId: string,
+    exerciseId: string,
+    patch: Pick<ExerciseOverride, 'weight_increment_lb' | 'weight_stack_min_lb'>,
+  ): Promise<void> {
+    const { error } = await this.db.from('user_exercise_overrides').upsert(
+      {
+        user_id: userId,
+        exercise_id: exerciseId,
+        weight_increment_lb: patch.weight_increment_lb ?? null,
+        weight_stack_min_lb: patch.weight_stack_min_lb ?? null,
+      },
+      { onConflict: 'user_id,exercise_id' },
+    );
+    if (error) throw error;
   }
 
   async listSearchable(_userId: string): Promise<SearchableExercise[]> {
