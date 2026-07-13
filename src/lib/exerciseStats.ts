@@ -172,6 +172,48 @@ export function repMaxes(
     .sort((a, b) => a.reps - b.reps);
 }
 
+export interface HistorySession {
+  date: string;
+  t: number;
+  /** Working sets only (warm-ups excluded), in logged order. */
+  sets: { weight_lb: number; reps: number; failed: boolean }[];
+  /** RIR of the heaviest working set — the session's representative effort. */
+  rir: number | null;
+  /** Best Epley e1RM for the session (rounded), or null if no working sets. */
+  e1rm: number | null;
+}
+
+/** The last `limit` sessions for an exercise, newest first, with per-set reps,
+ *  representative RIR, and resulting e1RM — the raw inputs behind a
+ *  recommendation (FEATURES.md #6). Pure over locally-stored sessions. */
+export function recentSessions(
+  sessions: StatSession[],
+  ex: StatExercise,
+  user: StatProfile,
+  limit = 5,
+): HistorySession[] {
+  return [...sessions]
+    .sort(byTime)
+    .reverse()
+    .slice(0, limit)
+    .map((s) => {
+      const ws = working(s);
+      const best = bestSetE1RM(s, ex, user);
+      const top = ws.length
+        ? ws.reduce((a, b) =>
+            b.weight_lb > a.weight_lb || (b.weight_lb === a.weight_lb && b.reps > a.reps) ? b : a,
+          )
+        : null;
+      return {
+        date: s.performed_at,
+        t: new Date(s.performed_at).getTime(),
+        sets: ws.map((x) => ({ weight_lb: x.weight_lb, reps: x.reps, failed: !!x.failed })),
+        rir: top?.rir ?? null,
+        e1rm: best ? Number(best.e1rm.toFixed(0)) : null,
+      };
+    });
+}
+
 export function summarize(
   sessions: StatSession[],
   ex: StatExercise,

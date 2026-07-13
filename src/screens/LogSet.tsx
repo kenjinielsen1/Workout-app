@@ -4,10 +4,12 @@ import { setE1RM } from '../lib/exerciseStats';
 import { equipmentIncrement } from '../lib/rounding';
 import { plateLoadout } from '../lib/plateMath';
 import { formatRest, nextSetTarget } from '../lib/liveProgression';
+import type { HistorySession } from '../lib/exerciseStats';
 import type { Equipment, LoadType } from '../lib/types';
 import { NumberStepper } from '../components/NumberStepper';
 import { RirSlider } from '../components/RirSlider';
 import { PlateChips } from '../components/PlateChips';
+import { SessionHistory } from '../components/SessionHistory';
 import { useRestTimer } from '../hooks/useRestTimer';
 
 export interface LogSetExercise {
@@ -50,6 +52,8 @@ interface LogSetProps {
   target: SessionTarget;
   /** Historical best e1RM for this lift, for live PR detection (FEATURES.md #4). */
   priorBestE1RM?: number;
+  /** Recent sessions for the one-tap "Last time" glance (FEATURES.md #6). */
+  history?: HistorySession[];
   onLogSet?: (set: LoggedSet) => void;
   onDeleteSet?: (id: string) => void;
 }
@@ -72,7 +76,7 @@ function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfil
   }
 }
 
-export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, onLogSet, onDeleteSet }: LogSetProps) {
+export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], onLogSet, onDeleteSet }: LogSetProps) {
   const weightStep = equipmentIncrement(exercise, profile);
   const [weight, setWeight] = useState(target.target_weight_lb);
   const [reps, setReps] = useState(target.target_reps);
@@ -81,6 +85,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, o
   const [sets, setSets] = useState<LoggedSet[]>([]);
   const [nextNote, setNextNote] = useState<string | null>(null);
   const [prCelebration, setPrCelebration] = useState<number | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   // Live PR detection: baseline = historical best, then the running best of this
   // session's working sets. Snapshot stays synced until the first set is logged.
@@ -185,7 +190,21 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, o
             {target.rationale}
           </p>
         )}
+        {history.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowHistory((v) => !v)}
+            aria-expanded={showHistory}
+            className="mt-1 self-start text-sm font-medium text-emerald-700 dark:text-emerald-400"
+          >
+            {showHistory ? 'Hide history ▴' : 'Last time ▾'}
+          </button>
+        )}
       </header>
+
+      {showHistory && history.length > 0 && (
+        <SessionHistory title={`Last ${history.length} — ${exercise.name}`} sessions={history} />
+      )}
 
       {prCelebration !== null && (
         <div

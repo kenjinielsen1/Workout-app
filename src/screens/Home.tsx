@@ -6,7 +6,7 @@ import { deriveInitialTarget, type SessionTarget } from '../lib/target';
 import { exerciseFeatures, recommendTarget, sessionsForExercise } from '../lib/recommend';
 import { isMLConfigured, predict } from '../lib/mlClient';
 import type { FinalTarget, MLPrediction } from '../lib/blend';
-import { bestSetE1RM, summarize } from '../lib/exerciseStats';
+import { bestSetE1RM, recentSessions, summarize } from '../lib/exerciseStats';
 import { dailyReadiness, type DailyCheckin } from '../lib/progression';
 import { formatDuration } from '../lib/liveProgression';
 import { LogSet, type LoggedSet } from './LogSet';
@@ -311,6 +311,12 @@ export function Home() {
     );
   }, [detailSessions, selected, profile]);
 
+  // Last 5 sessions for the one-tap "Last time" glance on Log Set (FEATURES.md #6).
+  const exerciseHistory = useMemo(() => {
+    if (!selected || !profile) return [];
+    return recentSessions(detailSessions, { load_type: selected.load_type }, { bodyweight_lb: profile.bodyweight_lb }, 5);
+  }, [detailSessions, selected, profile]);
+
   // Everything logged since the workout clock started, grouped by movement — a
   // running log across all exercises in this session (survives switching lifts).
   const workoutLog = useMemo<WorkoutLogEntry[]>(() => {
@@ -401,6 +407,7 @@ export function Home() {
             profile={profile}
             target={target}
             priorBestE1RM={priorBestE1RM}
+            history={exerciseHistory}
             onLogSet={onLogSet}
             onDeleteSet={onDeleteSet}
           />

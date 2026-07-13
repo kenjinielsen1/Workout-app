@@ -4,6 +4,7 @@ import {
   e1rmSeries,
   isE1RMPr,
   prHistory,
+  recentSessions,
   repMaxes,
   sessionTonnage,
   setE1RM,
@@ -166,5 +167,37 @@ describe('setE1RM / isE1RMPr (live PR flagging)', () => {
     // The adjusted (internal) figure folds in reps-in-reserve and differs.
     const adjusted = adjustedE1RM(effectiveLoad(set, barbell, user), 5, 1);
     expect(adjusted).not.toBeCloseTo(displayed, 2);
+  });
+});
+
+// --- FEATURES.md #6: readable per-exercise history --------------------------
+describe('recentSessions', () => {
+  const sessions = [
+    s(day(1), [{ weight_lb: 215, reps: 6, rir: 2 }, { weight_lb: 215, reps: 6, rir: 1 }]),
+    s(day(4), [
+      { weight_lb: 135, reps: 5, is_warmup: true },
+      { weight_lb: 225, reps: 5, rir: 2 },
+      { weight_lb: 225, reps: 5, rir: 1 },
+    ]),
+    s(day(8), [{ weight_lb: 230, reps: 5, rir: 3 }, { weight_lb: 230, reps: 4, rir: 1 }]),
+  ];
+
+  it('returns the last N sessions newest-first', () => {
+    const rows = recentSessions(sessions, barbell, user, 2);
+    expect(rows.map((r) => r.date)).toEqual([day(8), day(4)]);
+  });
+
+  it('reports per-set reps accurately and excludes warm-ups', () => {
+    const jul4 = recentSessions(sessions, barbell, user).find((r) => r.date === day(4))!;
+    expect(jul4.sets).toEqual([
+      { weight_lb: 225, reps: 5, failed: false },
+      { weight_lb: 225, reps: 5, failed: false },
+    ]); // the 135 warm-up is gone
+  });
+
+  it('carries the representative RIR and the session e1RM', () => {
+    const jul8 = recentSessions(sessions, barbell, user)[0]!;
+    expect(jul8.rir).toBe(3); // heaviest set's RIR (230×5)
+    expect(jul8.e1rm).toBe(Math.round(230 * (1 + 5 / 30)));
   });
 });

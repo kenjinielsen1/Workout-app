@@ -49,7 +49,7 @@ describe('ExerciseDetail', () => {
 
   it('lists PR history most-recent first', () => {
     render(<ExerciseDetail exercise={exercise} profile={profile} sessions={sessions} />);
-    const list = screen.getByRole('list');
+    const list = screen.getByRole('list', { name: /pr history/i });
     const items = within(list).getAllByRole('listitem');
     expect(items).toHaveLength(3);
     expect(items[0]!).toHaveTextContent('251 lb e1RM'); // newest PR at top

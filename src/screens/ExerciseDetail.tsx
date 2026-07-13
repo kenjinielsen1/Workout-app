@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   e1rmSeries,
   prHistory,
+  recentSessions,
   repMaxes,
   summarize,
   tonnageSeries,
@@ -10,6 +11,7 @@ import {
 import type { LoadType } from '../lib/types';
 import { LineChart, type LinePoint } from '../components/LineChart';
 import { BarChart } from '../components/BarChart';
+import { SessionHistory } from '../components/SessionHistory';
 
 export interface DetailExercise {
   name: string;
@@ -41,7 +43,7 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub?: R
 }
 
 export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailProps) {
-  const { summary, e1rmPoints, tonnagePoints, prs, rms } = useMemo(() => {
+  const { summary, e1rmPoints, tonnagePoints, prs, rms, recent } = useMemo(() => {
     const summary = summarize(sessions, exercise, profile);
     const series = e1rmSeries(sessions, exercise, profile);
     const prList = prHistory(sessions, exercise, profile);
@@ -53,6 +55,7 @@ export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailPr
       tonnagePoints: tonnageSeries(sessions, exercise, profile).map((p) => ({ t: p.t, y: p.tonnage })),
       prs: [...prList].reverse(), // most recent PR first
       rms: repMaxes(sessions, exercise, profile),
+      recent: recentSessions(sessions, exercise, profile, 5),
     };
   }, [sessions, exercise, profile]);
 
@@ -100,6 +103,13 @@ export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailPr
         <LineChart points={e1rmPoints} ariaLabel="Estimated 1RM over time" formatY={(n) => `${Math.round(n)}`} />
       </section>
 
+      {recent.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-sm font-semibold text-neutral-600 dark:text-neutral-300">Last 5 sessions</h2>
+          <SessionHistory sessions={recent} />
+        </section>
+      )}
+
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-neutral-600 dark:text-neutral-300">Tonnage per session</h2>
         <BarChart bars={tonnagePoints} ariaLabel="Tonnage per session" formatY={fmtTonnage} />
@@ -122,7 +132,7 @@ export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailPr
       {prs.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-neutral-600 dark:text-neutral-300">PR history</h2>
-          <ul className="flex flex-col gap-1.5">
+          <ul aria-label="PR history" className="flex flex-col gap-1.5">
             {prs.map((p) => (
               <li
                 key={p.date}

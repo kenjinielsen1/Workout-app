@@ -168,6 +168,23 @@ describe('LogSet screen', () => {
     expect(screen.queryByText('PR')).not.toBeInTheDocument();
   });
 
+  it('reveals per-exercise history in one tap from Log Set', async () => {
+    const user = userEvent.setup();
+    const history = [
+      {
+        date: '2026-07-08T00:00:00Z',
+        t: Date.parse('2026-07-08T00:00:00Z'),
+        sets: [{ weight_lb: 225, reps: 5, failed: false }],
+        rir: 2,
+        e1rm: 253,
+      },
+    ];
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} history={history} />);
+    expect(screen.queryByText('225 × 5')).not.toBeInTheDocument(); // collapsed
+    await user.click(screen.getByRole('button', { name: /last time/i }));
+    expect(screen.getByText('225 × 5')).toBeInTheDocument(); // one tap → visible
+  });
+
   it('shows the effective-load note for dumbbells instead of plate chips', () => {
     render(
       <LogSet
