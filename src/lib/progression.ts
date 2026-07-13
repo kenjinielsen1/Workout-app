@@ -346,6 +346,33 @@ function blockingVetoes(
   return { blocks, forceDeload };
 }
 
+// FEATURES.md #3 — deload transparency. A genuine stall is flat e1RM with NORMAL
+// fatigue and flat RPE (distinct from fatigue-masking, which is flat e1RM with
+// HIGH fatigue → volume cut). Feature 5 (plateau breaker) reuses this.
+export function isGenuineStall(sig: Signals, ctx: ProgContext, rpeSlope: number): boolean {
+  return sig.s2 <= 0 && ctx.acwr <= 1.3 && Math.abs(rpeSlope) <= 0.2;
+}
+
+/** Plain-English reasons a hold/deload fired, naming the signals responsible
+ *  (most-limiting first). Empty when nothing is clearly negative. */
+export function readinessReasons(sig: Signals, ctx: ProgContext): string[] {
+  const out: string[] = [];
+  if (sig.s2 <= 0) out.push('your e1RM has been flat');
+  if (sig.s4 <= 0) out.push(`recent training load is elevated (ACWR ${ctx.acwr.toFixed(1)})`);
+  if (sig.s5 < 0) out.push('sessions have been feeling harder (RPE trending up)');
+  if (sig.s1 < 0) out.push('your last top set had little left in reserve');
+  if (ctx.dailyReadiness != null && ctx.dailyReadiness < 0) out.push("today's readiness check-in was rough");
+  if (ctx.daysSinceLast >= 14) out.push(`you've had ${Math.round(ctx.daysSinceLast)} days off (some detraining)`);
+  return out;
+}
+
+/** Join up to two reasons into a readable clause, or a fallback. */
+function reasonClause(reasons: string[], fallback: string): string {
+  const top = reasons.slice(0, 2);
+  if (top.length === 0) return fallback;
+  return top.length === 1 ? top[0]! : `${top[0]} and ${top[1]}`;
+}
+
 // ---------------------------------------------------------------------------
 /** The main entry point: next-session prescription for one exercise. */
 export function recommendProgression(ctx: ProgContext): ProgRecommendation {
@@ -489,13 +516,18 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
     case 'deload': {
       let w = snapToLoadable(baseWeight * DELOAD_FACTOR, ex, user, 'floor');
       if (w >= baseWeight) w = snapToLoadable(baseWeight - equipmentIncrement(ex, user), ex, user, 'floor');
+      // Name the specific trigger; force-cadence deloads are planned, not reactive.
+      const forced = ctx.sessionsSinceLastDeload >= DELOAD_FORCE_SESSIONS;
+      const why = forced
+        ? `it's been ${ctx.sessionsSinceLastDeload} sessions since your last back-off — a scheduled deload week`
+        : reasonClause(readinessReasons(signals, ctx), `readiness has dropped to ${readiness.toFixed(2)}`);
       return build(
         'deload',
         w,
         range.min,
         sets,
-        `${label}deload to ${w} lb × ${range.min} (readiness ${readiness.toFixed(2)}). ` +
-          `Back off ~10% and rebuild through the rep range.`,
+        `${label}Deload: ${baseWeight} → ${w} lb × ${range.min}. ${capitalize(why)}. ` +
+          `This is an engineered back-off, not a setback — shed the fatigue and expect to beat these numbers next week.`,
       );
     }
     case 'repeat_flagged':
@@ -504,18 +536,28 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
         baseWeight,
         targetReps,
         sets,
-        `${label}repeat ${baseWeight} lb × ${targetReps} (readiness ${readiness.toFixed(2)}). ` +
-          `Readiness is slipping — one more soft session triggers a deload.`,
+        `${label}Hold ${baseWeight} lb × ${targetReps} — ` +
+          `${reasonClause(readinessReasons(signals, ctx), `readiness is slipping (${readiness.toFixed(2)})`)}. ` +
+          `One more soft session and I'll call a deload.`,
       );
     case 'repeat':
-    default:
+    default: {
+      const stalled = isGenuineStall(signals, ctx, rpeSlope);
+      const why = stalled
+        ? `your e1RM has been flat with fresh legs — a genuine plateau, not fatigue`
+        : reasonClause(readinessReasons(signals, ctx), `no clear signal to progress or back off yet`);
       return build(
         'repeat',
         baseWeight,
         targetReps,
         sets,
-        `${label}repeat ${baseWeight} lb × ${targetReps} (readiness ${readiness.toFixed(2)}). ` +
-          `No clear signal to progress or back off — log it again.`,
+        `${label}Repeat ${baseWeight} lb × ${targetReps} — ${why}. ` +
+          `${stalled ? 'Match it or add a rep; if it holds again, time to change something.' : 'Log it again and we reassess.'}`,
       );
+    }
   }
+}
+
+function capitalize(s: string): string {
+  return s.length ? s[0]!.toUpperCase() + s.slice(1) : s;
 }

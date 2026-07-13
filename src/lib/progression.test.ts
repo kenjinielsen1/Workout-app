@@ -415,6 +415,87 @@ describe('daily readiness check-in (S6)', () => {
   });
 });
 
+// --- FEATURES.md #3: deload transparency ------------------------------------
+describe('deload transparency', () => {
+  const fatigueMasking = () =>
+    increaseCtx({
+      history: [
+        { performed_at: d(0), target_reps: 8, session_rpe: 6, sets: nSets(3, 115, 8, 2) },
+        { performed_at: d(1), target_reps: 8, session_rpe: 7, sets: nSets(3, 115, 8, 2) },
+        { performed_at: d(2), target_reps: 8, session_rpe: 8, sets: nSets(3, 115, 7, 1) },
+        { performed_at: d(3), target_reps: 8, session_rpe: 9, sets: nSets(3, 115, 7, 1) },
+      ],
+      acwr: 1.4,
+    });
+
+  // A genuine stall: flat e1RM, NORMAL fatigue, flat RPE, reps under target.
+  const genuineStall = () =>
+    increaseCtx({
+      history: [0, 1, 2, 3].map((k) => ({
+        performed_at: d(k),
+        target_reps: 8,
+        session_rpe: 7,
+        sets: nSets(3, 100, 7, 2), // 100×7 unchanged; below the 8-rep target
+      })),
+      acwr: 1.0,
+    });
+
+  // A readiness-band deload (NOT fatigue-masking): declining e1RM, reps under
+  // target, no reserve, elevated ACWR — but FLAT rpe so it isn't the masked case.
+  const decliningDeload = () =>
+    increaseCtx({
+      history: [120, 115, 110, 105].map((w, i) => ({
+        performed_at: d(i),
+        target_reps: 8,
+        session_rpe: 8, // flat → avoids the fatigue-masking (rising-RPE) branch
+        sets: nSets(3, w, 6, 0),
+      })),
+      acwr: 1.4, // elevated (s4 = 0) but below the 1.5 masking threshold
+      previousWasFlagged: true,
+    });
+
+  it('no deload / no-increase recommendation ever has an empty rationale', () => {
+    const scenarios = [
+      recommendProgression(increaseCtx({ sessionsSinceLastDeload: 24 })), // forced deload
+      recommendProgression(fatigueMasking()), // reduce_volume
+      recommendProgression(genuineStall()), // repeat (plateau)
+      recommendProgression(decliningDeload()), // readiness deload
+    ];
+    for (const r of scenarios) {
+      expect(r.action === 'increase_load' || r.action === 'add_rep').toBe(false);
+      expect(r.rationale.trim().length).toBeGreaterThan(20);
+    }
+  });
+
+  it('stall (volume-cut / plateau) and fatigue messages are distinct', () => {
+    const fatigue = recommendProgression(fatigueMasking());
+    const stall = recommendProgression(genuineStall());
+    expect(fatigue.action).toBe('reduce_volume');
+    expect(fatigue.rationale).toMatch(/masked/i);
+    expect(stall.action).toBe('repeat');
+    expect(stall.rationale).toMatch(/plateau/i);
+    expect(fatigue.rationale).not.toEqual(stall.rationale);
+    expect(stall.rationale).not.toMatch(/masked/i);
+  });
+
+  it('the named trigger matches the signal/veto that fired', () => {
+    // Forced-cadence deload names the cadence.
+    const forced = recommendProgression(increaseCtx({ sessionsSinceLastDeload: 24 }));
+    expect(forced.action).toBe('deload');
+    expect(forced.rationale).toMatch(/scheduled deload|sessions since/i);
+
+    // A fatigue-driven deload names the elevated ACWR that drove it.
+    const deload = recommendProgression(decliningDeload());
+    expect(deload.action).toBe('deload');
+    expect(deload.rationale).toMatch(/ACWR/);
+  });
+
+  it('frames the deload as engineered, not failure', () => {
+    const r = recommendProgression(decliningDeload());
+    expect(r.rationale).toMatch(/not a setback|engineered/i);
+  });
+});
+
 // --- guards -----------------------------------------------------------------
 describe('guards', () => {
   it('throws on empty history', () => {
