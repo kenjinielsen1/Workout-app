@@ -29,6 +29,7 @@ const increaseRec = (weight: number, reps = 5): ProgRecommendation => ({
   confidence: 0.6,
   vetoes: [],
   rationale: 'Increase.',
+  plateau: false,
 });
 const ml = (e1rm: number, cold = false): MLPrediction => ({
   predicted_e1rm: e1rm,

@@ -128,6 +128,9 @@ export interface ProgRecommendation {
   confidence: number;
   vetoes: string[];
   rationale: string;
+  /** A genuine stall (flat e1RM, normal fatigue) the plateau breaker should
+   *  surface as a choice rather than silently deload (FEATURES.md #5). */
+  plateau: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +171,14 @@ export function repRangeForGoal(goal: Goal, isCompound: boolean): { min: number;
     case 'endurance':
       return isCompound ? { min: 12, max: 15 } : { min: 15, max: 20 };
   }
+}
+
+/** Plateau-breaker rep-range shift (FEATURES.md #5): move to a different rep
+ *  range for a block to drive a new adaptation, then back. Strength→hypertrophy,
+ *  hypertrophy→endurance, endurance→hypertrophy. */
+export function shiftedRepRange(goal: Goal, isCompound: boolean): { min: number; max: number } {
+  const next: Goal = goal === 'strength' ? 'hypertrophy' : goal === 'hypertrophy' ? 'endurance' : 'hypertrophy';
+  return repRangeForGoal(next, isCompound);
 }
 
 // Part 2 — expected weekly e1RM gain as a FRACTION, by training age.
@@ -400,6 +411,7 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
     0.9,
   );
 
+  let plateau = false; // set once the action is known (below)
   const build = (
     action: ProgAction,
     weight: number,
@@ -416,6 +428,7 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
     confidence: Number(confidence.toFixed(3)),
     vetoes,
     rationale: vetoes.length ? `${rationale} Blocked: ${vetoes.join('; ')}.` : rationale,
+    plateau,
   });
 
   // Veto #7 — pain/injury freezes progression outright.
@@ -467,6 +480,14 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
       action = targetReps < range.max ? 'add_rep' : 'repeat';
     }
   }
+
+  // Plateau breaker (FEATURES.md #5): a genuine stall (flat e1RM, normal fatigue,
+  // flat RPE over 3+ sessions) that resolves to a hold or deload — surface a
+  // choice instead of silently backing off. Never on the fatigue-masking case.
+  plateau =
+    ctx.sessionsThisExercise >= 3 &&
+    isGenuineStall(signals, ctx, rpeSlope) &&
+    (action === 'repeat' || action === 'repeat_flagged' || action === 'deload');
 
   // --- realize the chosen action into weight/reps -------------------------
   switch (action) {

@@ -7,13 +7,17 @@ import { exerciseFeatures, recommendTarget, sessionsForExercise } from '../lib/r
 import { isMLConfigured, predict } from '../lib/mlClient';
 import type { FinalTarget, MLPrediction } from '../lib/blend';
 import { bestSetE1RM, recentSessions, summarize } from '../lib/exerciseStats';
-import { dailyReadiness, type DailyCheckin } from '../lib/progression';
+import { dailyReadiness, repRangeForGoal, shiftedRepRange, type DailyCheckin } from '../lib/progression';
+import { snapToLoadable } from '../lib/rounding';
+import { variantsOf } from '../lib/variants';
 import { formatDuration } from '../lib/liveProgression';
 import { LogSet, type LoggedSet } from './LogSet';
 import { ExerciseDetail } from './ExerciseDetail';
 import { ExercisePicker, type PickerExercise } from '../components/ExercisePicker';
 import { WorkoutLog, type WorkoutLogEntry } from '../components/WorkoutLog';
 import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCheckIn';
+import { PlateauCard } from '../components/PlateauCard';
+import type { PlateauChoice } from '../data/domain';
 import { Settings } from './Settings';
 
 type Tab = 'detail' | 'log';
@@ -317,6 +321,46 @@ export function Home() {
     return recentSessions(detailSessions, { load_type: selected.load_type }, { bodyweight_lb: profile.bodyweight_lb }, 5);
   }, [detailSessions, selected, profile]);
 
+  // Plateau breaker (FEATURES.md #5): the engine flags a genuine stall on the
+  // target; offer a choice rather than silently deloading. Resolved (or twice
+  // ignored) cards stay hidden for the exercise.
+  const plateau = (target as FinalTarget | null)?.plateau ?? false;
+  const [plateauResolved, setPlateauResolved] = useState<Set<string>>(new Set());
+  const variants = useMemo(
+    () => (selected ? variantsOf(selected, exercises).map((e) => ({ id: e.id, name: e.name, variant_of: e.variant_of })) : []),
+    [selected, exercises],
+  );
+
+  const resolvePlateau = useCallback(
+    async (choice: PlateauChoice, variantId?: string) => {
+      if (recommendationId.current) await store.recordPlateauChoice(recommendationId.current, choice);
+      setPlateauResolved((s) => new Set(s).add(selectedId));
+      if (choice === 'variation' && variantId) {
+        setSelectedId(variantId); // switch lifts; its own history seeds the load
+      } else if (choice === 'rep_range_shift' && selected && profile) {
+        const shifted = shiftedRepRange(profile.goal, selected.is_compound);
+        setTarget((t) => (t ? { ...t, target_reps: shifted.min } : t));
+      } else if (choice === 'deload' && selected && profile) {
+        const range = repRangeForGoal(profile.goal, selected.is_compound);
+        setTarget((t) =>
+          t
+            ? { ...t, target_weight_lb: snapToLoadable(t.target_weight_lb * 0.9, selected, profile, 'floor'), target_reps: range.min }
+            : t,
+        );
+      }
+      void store.flush();
+    },
+    [store, selectedId, selected, profile],
+  );
+
+  const dismissPlateau = useCallback(() => {
+    const key = `po:plateauSkips:${userId}:${selectedId}`;
+    const n = Number(localStorage.getItem(key) ?? 0) + 1;
+    localStorage.setItem(key, String(n));
+    if (n >= 2) void resolvePlateau('deload'); // ignored twice → default to deload
+    else setPlateauResolved((s) => new Set(s).add(selectedId));
+  }, [userId, selectedId, resolvePlateau]);
+
   // Everything logged since the workout clock started, grouped by movement — a
   // running log across all exercises in this session (survives switching lifts).
   const workoutLog = useMemo<WorkoutLogEntry[]>(() => {
@@ -398,6 +442,17 @@ export function Home() {
           {!checkinDismissed && workoutStartedAt === null && (
             <div className="px-4">
               <ReadinessCheckIn onSubmit={submitCheckin} onSkip={skipCheckin} />
+            </div>
+          )}
+          {plateau && !plateauResolved.has(selectedId) && selected && profile && (
+            <div className="px-4">
+              <PlateauCard
+                currentRange={repRangeForGoal(profile.goal, selected.is_compound)}
+                shiftedRange={shiftedRepRange(profile.goal, selected.is_compound)}
+                variants={variants}
+                onChoose={resolvePlateau}
+                onDismiss={dismissPlateau}
+              />
             </div>
           )}
           <LogSet

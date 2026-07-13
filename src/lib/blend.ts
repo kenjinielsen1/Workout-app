@@ -62,6 +62,8 @@ export interface FinalTarget extends SessionTarget {
   blended_e1rm?: number;
   rule_e1rm?: number; // logged for the nightly ML-vs-rule MAE comparison
   ml_e1rm?: number;
+  /** Genuine stall — the plateau breaker should offer a choice (FEATURES.md #5). */
+  plateau?: boolean;
 }
 
 /** Inverse of effectiveLoad: from on-the-body load back to a logged weight. */
@@ -164,6 +166,7 @@ export function finalizeTarget(input: FinalizeInput): FinalTarget {
     confidence: rule.confidence,
     alpha: 0,
     applied,
+    plateau: rule.plateau,
   });
 
   // Structure is the rule engine's: only a load increase gets ML magnitude tuning.

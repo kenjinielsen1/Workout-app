@@ -13,7 +13,7 @@ import { groupAllSessions, groupSetsIntoSessions } from './mappers';
 import { PROFILE_DEFAULTS } from './dbTypes';
 import { demoHistory, seedExercises } from './seedCatalog';
 import type {
-  AllSession, CreateExerciseInput, Exercise, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, Workout, WorkoutCheckin,
+  AllSession, CreateExerciseInput, Exercise, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, PlateauChoice, Workout, WorkoutCheckin,
 } from './domain';
 import { slugify } from '../lib/newExercise';
 import type { LogSetInput, SaveRecommendationInput, WorkoutStore } from './store';
@@ -217,11 +217,20 @@ export class LocalFirstStore implements WorkoutStore {
   async saveRecommendation(input: SaveRecommendationInput): Promise<string> {
     await this.ready;
     const rec: Recommendation = {
-      id: uuid(), generated_at: new Date().toISOString(), accepted: null, actual_outcome: null, ...input,
+      id: uuid(), generated_at: new Date().toISOString(), accepted: null, actual_outcome: null, plateau_choice: null, ...input,
     };
     await this.db.put('recommendations', rec);
     await this.enqueue({ kind: 'recommendation', payload: rec });
     return rec.id;
+  }
+
+  async recordPlateauChoice(recommendationId: string, choice: PlateauChoice): Promise<void> {
+    await this.ready;
+    const rec = await this.db.get('recommendations', recommendationId);
+    if (!rec) return;
+    rec.plateau_choice = choice;
+    await this.db.put('recommendations', rec);
+    await this.enqueue({ kind: 'recommendation', payload: rec }); // re-push the full row
   }
 
   async recordOutcome(recommendationId: string, accepted: boolean, outcome: OutcomeJson): Promise<void> {

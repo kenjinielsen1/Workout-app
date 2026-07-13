@@ -87,6 +87,20 @@ describe('clearing a logged set', () => {
   });
 });
 
+describe('plateau breaker resolution logging (FEATURES.md #5)', () => {
+  it('records the chosen resolution on the recommendation and syncs it to the ML layer', async () => {
+    const remote = new MockRemote();
+    const store = new LocalFirstStore({ dbName: dbName(), remote });
+    const id = await store.saveRecommendation({
+      user_id: U, exercise_id: 'barbell-back-squat', target_weight_lb: 225, target_reps: 5,
+      target_sets: 3, confidence: 0.5, rationale: 'repeat', alpha: 0, rule_pred_e1rm: 260, ml_pred_e1rm: null,
+    });
+    await store.recordPlateauChoice(id, 'rep_range_shift');
+    await store.flush();
+    expect(remote.recs.get(id)?.plateau_choice).toBe('rep_range_shift');
+  });
+});
+
 describe('idempotent background sync', () => {
   it('drains the queue once and never double-pushes on replay', async () => {
     const remote = new MockRemote();

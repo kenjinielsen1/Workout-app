@@ -12,6 +12,7 @@ import type {
   LoggedSession,
   LoggedSet,
   OutcomeJson,
+  PlateauChoice,
   OutcomeRow,
   Profile,
   Recommendation,
@@ -176,6 +177,7 @@ export class InMemoryWorkoutStore implements WorkoutStore {
       generated_at: new Date().toISOString(),
       accepted: null,
       actual_outcome: null,
+      plateau_choice: null,
       ...input,
     });
     return id;
@@ -186,6 +188,11 @@ export class InMemoryWorkoutStore implements WorkoutStore {
     if (!rec) return;
     rec.accepted = accepted;
     rec.actual_outcome = outcome;
+  }
+
+  async recordPlateauChoice(recommendationId: string, choice: PlateauChoice): Promise<void> {
+    const rec = this.recommendations.get(recommendationId);
+    if (rec) rec.plateau_choice = choice;
   }
 
   async exportOutcomes(userId: string): Promise<OutcomeRow[]> {

@@ -494,6 +494,28 @@ describe('deload transparency', () => {
     const r = recommendProgression(decliningDeload());
     expect(r.rationale).toMatch(/not a setback|engineered/i);
   });
+
+  // FEATURES.md #5: the plateau flag rides on the same detection.
+  it('flags a genuine stall as a plateau, but never the fatigue-masking case', () => {
+    expect(recommendProgression(genuineStall()).plateau).toBe(true);
+    expect(recommendProgression(fatigueMasking()).plateau).toBe(false); // volume cut, not a plateau
+  });
+
+  it('does not flag a plateau before 3 sessions on the exercise', () => {
+    const r = recommendProgression(
+      increaseCtx({
+        history: [0, 1, 2, 3].map((k) => ({
+          performed_at: d(k),
+          target_reps: 8,
+          session_rpe: 7,
+          sets: nSets(3, 100, 7, 2),
+        })),
+        acwr: 1.0,
+        sessionsThisExercise: 2, // too few to call a plateau
+      }),
+    );
+    expect(r.plateau).toBe(false);
+  });
 });
 
 // --- guards -----------------------------------------------------------------

@@ -25,6 +25,7 @@ import type {
   Exercise,
   LoggedSession,
   OutcomeJson,
+  PlateauChoice,
   OutcomeRow,
   Profile,
   Workout,
@@ -195,6 +196,14 @@ export class SupabaseWorkoutStore implements WorkoutStore {
     const { error } = await this.db
       .from('recommendations')
       .update({ accepted, actual_outcome: outcome })
+      .eq('id', recommendationId);
+    if (error) throw error;
+  }
+
+  async recordPlateauChoice(recommendationId: string, choice: PlateauChoice): Promise<void> {
+    const { error } = await this.db
+      .from('recommendations')
+      .update({ plateau_choice: choice })
       .eq('id', recommendationId);
     if (error) throw error;
   }

@@ -8,6 +8,7 @@ import type {
   Exercise,
   LoggedSession,
   OutcomeJson,
+  PlateauChoice,
   OutcomeRow,
   Profile,
   Workout,
@@ -76,6 +77,8 @@ export interface WorkoutStore {
   saveRecommendation(input: SaveRecommendationInput): Promise<string>;
   /** Record whether the recommendation was accepted and what actually happened. */
   recordOutcome(recommendationId: string, accepted: boolean, outcome: OutcomeJson): Promise<void>;
+  /** Log the plateau-breaker resolution the user chose (FEATURES.md #5). */
+  recordPlateauChoice(recommendationId: string, choice: PlateauChoice): Promise<void>;
   /** Flattened rows (recs with a realized outcome) for the nightly evaluate job. */
   exportOutcomes(userId: string): Promise<OutcomeRow[]>;
 }

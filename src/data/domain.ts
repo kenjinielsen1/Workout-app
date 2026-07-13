@@ -128,7 +128,12 @@ export interface Recommendation {
   ml_pred_e1rm: number | null;
   accepted: boolean | null;
   actual_outcome: OutcomeJson | null;
+  /** Plateau-breaker resolution the user picked, if any (FEATURES.md #5). */
+  plateau_choice: PlateauChoice | null;
 }
+
+/** The three plateau-breaker resolutions (FEATURES.md #5). */
+export type PlateauChoice = 'deload' | 'rep_range_shift' | 'variation';
 
 /** Flattened row the nightly evaluate.py job consumes. */
 export interface OutcomeRow {
