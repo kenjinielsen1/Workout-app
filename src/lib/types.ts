@@ -36,6 +36,12 @@ export interface Exercise {
   load_type: LoadType;
   /** 5 upper / 10 lower / 2.5 isolation. Used as a rounding hint, never below 2.5. */
   default_increment_lb: number;
+  /** The machine's actual selectable step (INCREMENTS.md). Null for
+   *  barbell/dumbbell/plate-loaded → falls through to equipment logic. When set
+   *  (catalog or per-user override) it is used verbatim, off the 2.5 grid. */
+  weight_increment_lb?: number | null;
+  /** Lightest selectable weight on the stack (INCREMENTS.md). Null = 0 / bar floor. */
+  weight_stack_min_lb?: number | null;
 }
 
 /** Minimal set shape needed by effectiveLoad(). */

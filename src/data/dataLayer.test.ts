@@ -11,6 +11,7 @@ describe('mappers', () => {
       primary_muscles: ['quadriceps'], secondary_muscles: [], equipment: 'barbell',
       load_type: 'total', is_unilateral: false, is_compound: true,
       default_increment_lb: '10' as unknown as number, fatigue_cost: '5' as unknown as number,
+      weight_increment_lb: null, weight_stack_min_lb: null,
       is_system: true, owner_id: null, variant_of: null,
     } satisfies ExerciseRow;
     const ex = rowToExercise(row);

@@ -16,18 +16,11 @@ const withMicro: Profile = {
 };
 const noMicro: Profile = { ...withMicro, has_micro_plates: false };
 
-const barbell: Pick<Exercise, 'equipment' | 'default_increment_lb'> = {
-  equipment: 'barbell',
-  default_increment_lb: 10,
-};
-const dumbbell: Pick<Exercise, 'equipment' | 'default_increment_lb'> = {
-  equipment: 'dumbbell',
-  default_increment_lb: 5,
-};
-const machine: Pick<Exercise, 'equipment' | 'default_increment_lb'> = {
-  equipment: 'machine_selectorized',
-  default_increment_lb: 15,
-};
+type Ex = Pick<Exercise, 'equipment' | 'default_increment_lb' | 'weight_increment_lb' | 'weight_stack_min_lb'>;
+const barbell: Ex = { equipment: 'barbell', default_increment_lb: 10 };
+const dumbbell: Ex = { equipment: 'dumbbell', default_increment_lb: 5 };
+// A selectorized stack with a real 15 lb step starting at 20 lb (INCREMENTS.md).
+const machine: Ex = { equipment: 'machine_selectorized', default_increment_lb: 15, weight_increment_lb: 15, weight_stack_min_lb: 20 };
 
 const isMultipleOf = (lb: number, inc: number) =>
   Number((lb % inc).toFixed(4)) === 0;
@@ -63,8 +56,20 @@ describe('equipmentIncrement', () => {
   it('dumbbell uses the profile increment', () => {
     expect(equipmentIncrement(dumbbell, withMicro)).toBe(5);
   });
-  it('machine uses its stack increment', () => {
+  it('machine uses its catalog weight_increment_lb verbatim', () => {
     expect(equipmentIncrement(machine, withMicro)).toBe(15);
+  });
+  it('a cable/selectorized machine with no catalog step falls back to the 10 lb default', () => {
+    const guessed: Ex = { equipment: 'cable', default_increment_lb: 5 };
+    expect(equipmentIncrement(guessed, withMicro)).toBe(10);
+  });
+  it('a non-2.5 machine step (3 lb) is respected, not forced to the 2.5 grid', () => {
+    const threeLb: Ex = { equipment: 'machine_selectorized', default_increment_lb: 5, weight_increment_lb: 3 };
+    expect(equipmentIncrement(threeLb, withMicro)).toBe(3);
+  });
+  it('plate-loaded machines stay on the 2.5 grid', () => {
+    const plate: Ex = { equipment: 'machine_plate', default_increment_lb: 10 };
+    expect(equipmentIncrement(plate, withMicro)).toBe(2.5);
   });
 });
 
@@ -82,21 +87,47 @@ describe('snapToLoadable — barbell floor', () => {
   });
 });
 
-describe('snapToLoadable — dumbbells and machines', () => {
+describe('snapToLoadable — dumbbells and machines (INCREMENTS.md)', () => {
   it('dumbbells snap to the per-hand increment (5), not 2.5', () => {
     expect(snapToLoadable(62.4, dumbbell, withMicro)).toBe(60);
     expect(isMultipleOf(snapToLoadable(62.4, dumbbell, withMicro), 5)).toBe(true);
   });
 
-  it('selectorized machines snap to the stack increment (15)', () => {
-    expect(snapToLoadable(100, machine, withMicro)).toBe(90); // floor to nearest 15
-    expect(isMultipleOf(snapToLoadable(100, machine, withMicro), 15)).toBe(true);
+  it('a stack of min 20 / step 15 only ever returns 20, 35, 50, 65…', () => {
+    expect(snapToLoadable(19, machine, withMicro)).toBe(20); // below min → the min
+    expect(snapToLoadable(20, machine, withMicro)).toBe(20);
+    expect(snapToLoadable(34, machine, withMicro)).toBe(20);
+    expect(snapToLoadable(35, machine, withMicro)).toBe(35);
+    expect(snapToLoadable(100, machine, withMicro)).toBe(95); // 20 + 5*15
+    for (const raw of [21, 47, 63, 88, 140]) {
+      const w = snapToLoadable(raw, machine, withMicro);
+      expect((w - 20) % 15).toBe(0);
+    }
+  });
+
+  it('a 3 lb machine returns weights on the 3 lb grid, not 5', () => {
+    const threeLb: Ex = { equipment: 'cable', default_increment_lb: 5, weight_increment_lb: 3, weight_stack_min_lb: 0 };
+    expect(snapToLoadable(20, threeLb, withMicro)).toBe(18); // 6*3, floored from 20
+    expect(isMultipleOf(snapToLoadable(20, threeLb, withMicro), 3)).toBe(true);
+    expect(isMultipleOf(snapToLoadable(20, threeLb, withMicro), 5)).toBe(false);
+  });
+
+  it('floors between two steps — never rounds up', () => {
+    // min 20, step 15: anything in [35,50) floors to 35.
+    for (const raw of [35, 40, 49.9]) expect(snapToLoadable(raw, machine, withMicro)).toBe(35);
+  });
+
+  it('a below-minimum request returns the stack minimum, never zero', () => {
+    expect(snapToLoadable(0, machine, withMicro)).toBe(20);
+    expect(snapToLoadable(-50, machine, withMicro)).toBe(20);
   });
 });
 
 describe('rounding invariant — 10k random model outputs under a safety cap', () => {
-  it('every emitted target is a multiple of 2.5, loadable, and never over the cap', () => {
-    const exercises = [barbell, dumbbell, machine];
+  it('every emitted target is on its exercise grid, loadable, and never over the cap', () => {
+    const threeLb: Ex = { equipment: 'cable', default_increment_lb: 5, weight_increment_lb: 3, weight_stack_min_lb: 5 };
+    const plate: Ex = { equipment: 'machine_plate', default_increment_lb: 10 };
+    const exercises = [barbell, dumbbell, machine, threeLb, plate];
     const profiles = [withMicro, noMicro];
 
     for (let i = 0; i < 10_000; i++) {
@@ -110,14 +141,16 @@ describe('rounding invariant — 10k random model outputs under a safety cap', (
       const capped = Math.min(raw, cap);
       const final = snapToLoadable(capped, ex, user, 'floor');
 
-      // Multiple of 2.5, always.
-      expect(isMultipleOf(final, ROUNDING_INCREMENT_LB)).toBe(true);
-      // Physically loadable for this equipment/profile.
+      // Free-weight equipment stays on the 2.5 grid; machines on their own grid.
+      if (ex.equipment === 'barbell' || ex.equipment === 'dumbbell' || ex.equipment === 'machine_plate') {
+        expect(isMultipleOf(final, ROUNDING_INCREMENT_LB)).toBe(true);
+      }
+      // Physically selectable for this equipment/profile.
       expect(isLoadable(final, ex, user)).toBe(true);
-      // Never breached the cap (barbell floor is the one allowed exception:
-      // an empty bar is the minimum you can physically load).
-      if (ex.equipment === 'barbell' && final === BAR_WEIGHT_LB) {
-        // floor of the bar; acceptable even if cap < 45.
+      // Never breached the cap — the stack/bar minimum is the one allowed floor.
+      const min = ex.weight_stack_min_lb ?? (ex.equipment === 'barbell' ? BAR_WEIGHT_LB : 0);
+      if (final === min) {
+        // the lightest selectable weight; acceptable even if cap < min.
       } else {
         expect(final).toBeLessThanOrEqual(capped + 1e-9);
       }

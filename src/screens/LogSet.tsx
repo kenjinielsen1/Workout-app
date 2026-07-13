@@ -19,6 +19,8 @@ export interface LogSetExercise {
   load_type: LoadType;
   default_increment_lb: number;
   is_compound: boolean;
+  weight_increment_lb?: number | null;
+  weight_stack_min_lb?: number | null;
 }
 
 export interface LogSetProfile {

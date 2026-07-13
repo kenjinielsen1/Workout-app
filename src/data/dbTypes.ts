@@ -17,6 +17,8 @@ export interface ExerciseRow {
   is_unilateral: boolean;
   is_compound: boolean;
   default_increment_lb: number;
+  weight_increment_lb: number | null;
+  weight_stack_min_lb: number | null;
   fatigue_cost: number;
   is_system: boolean;
   owner_id: string | null;

@@ -14,12 +14,25 @@ export interface Exercise {
   is_compound: boolean;
   is_unilateral: boolean;
   default_increment_lb: number;
+  /** The machine's real selectable step + lightest weight (INCREMENTS.md). Null/
+   *  absent for free weights → equipment-default rounding. */
+  weight_increment_lb?: number | null;
+  weight_stack_min_lb?: number | null;
   fatigue_cost: number;
   primary_muscles: string[];
   secondary_muscles: string[];
   is_system: boolean;
   owner_id: string | null;
   variant_of: string | null;
+}
+
+/** Per-user, per-exercise override of a machine's increment/min — the same
+ *  machine differs between gyms (INCREMENTS.md). */
+export interface ExerciseOverride {
+  user_id: string;
+  exercise_id: string;
+  weight_increment_lb: number | null;
+  weight_stack_min_lb: number | null;
 }
 
 /** Fields needed to create a user exercise; the store assigns id/slug/owner. */

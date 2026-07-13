@@ -8,12 +8,22 @@ import type { Exercise, Profile } from './types';
 /**
  * Rounding & loadability.
  *
- * Hard invariant: every emitted target_weight_lb is an exact multiple of 2.5.
- * The global rounding rule and the barbell constraint are the SAME constraint —
- * loadable barbell weights are 45 + 2.5k, and every multiple of 2.5 above 45 is
- * achievable with 1.25 lb plate pairs. So there is no separate snap_to_loadable
- * branch for barbells; there is one rule.
+ * Free weights (barbell, dumbbell, plate-loaded) live on the 2.5 lb grid:
+ * loadable barbell weights are 45 + 2.5k, achievable with 1.25 lb plate pairs.
+ *
+ * Cables and selectorized machines do NOT (INCREMENTS.md): each machine has its
+ * own physical step and lightest-selectable weight, so their loadable set is
+ * `min + k × increment` for a per-exercise (or per-user-override) increment that
+ * may be 3, 7, 15… — not necessarily a multiple of 2.5. Increment is a property
+ * of the machine, carried on the exercise (`weight_increment_lb`,
+ * `weight_stack_min_lb`), resolved before it reaches this module.
  */
+
+type IncExercise = Pick<
+  Exercise,
+  'equipment' | 'default_increment_lb' | 'weight_increment_lb' | 'weight_stack_min_lb'
+>;
+type IncProfile = Pick<Profile, 'has_micro_plates' | 'dumbbell_increment_lb'>;
 
 /** Nearest multiple of 2.5. */
 export const round = (lb: number): number =>
@@ -27,85 +37,74 @@ export const round = (lb: number): number =>
 export const floorTo = (lb: number): number =>
   Math.floor(lb / ROUNDING_INCREMENT_LB) * ROUNDING_INCREMENT_LB;
 
-/** Snap to an arbitrary increment, flooring or rounding to nearest. */
-function toMultiple(lb: number, increment: number, mode: 'floor' | 'nearest'): number {
-  const q = lb / increment;
-  const n = mode === 'floor' ? Math.floor(q) : Math.round(q);
-  // Guard against binary-float dust (e.g. 0.1 + 0.2) leaving a value like 149.99999.
-  return Number((n * increment).toFixed(4));
-}
-
-/** Force a raw increment onto the 2.5 grid so the global invariant always holds. */
+/** Force a raw increment onto the 2.5 grid (free-weight equipment only). */
 function snapIncrementTo2p5(raw: number): number {
   const snapped = Math.round(raw / ROUNDING_INCREMENT_LB) * ROUNDING_INCREMENT_LB;
   return Math.max(ROUNDING_INCREMENT_LB, snapped);
 }
 
 /**
- * The native minimum increment for an exercise, given the lifter's equipment.
- * Always the larger of 2.5 lb and the equipment's real-world minimum, and always
- * itself a multiple of 2.5 so the emitted target stays on the 2.5 grid.
+ * The selectable weight step for an exercise (INCREMENTS.md resolution order):
+ *   1. `weight_increment_lb` — the machine's real step (catalog value, or a
+ *      per-user override merged onto the exercise upstream). Used verbatim.
+ *   2. Equipment-type default.
+ * Barbell/dumbbell/plate stay on the 2.5 grid; cables/selectorized do not.
  */
-export function equipmentIncrement(
-  ex: Pick<Exercise, 'equipment' | 'default_increment_lb'>,
-  user: Pick<Profile, 'has_micro_plates' | 'dumbbell_increment_lb'>,
-): number {
+export function equipmentIncrement(ex: IncExercise, user: IncProfile): number {
+  if (ex.weight_increment_lb != null && ex.weight_increment_lb > 0) {
+    return ex.weight_increment_lb; // real machine step — NOT forced onto 2.5
+  }
   switch (ex.equipment) {
     case 'barbell':
       // Micro plates give the full 2.5 grid; without them the bar moves in 5s.
-      return user.has_micro_plates
-        ? ROUNDING_INCREMENT_LB
-        : BARBELL_INCREMENT_NO_MICRO_LB;
+      return user.has_micro_plates ? ROUNDING_INCREMENT_LB : BARBELL_INCREMENT_NO_MICRO_LB;
     case 'dumbbell':
       return snapIncrementTo2p5(user.dumbbell_increment_lb);
+    case 'machine_plate':
+      return ROUNDING_INCREMENT_LB; // plate-loaded → same 2.5 logic as a barbell
+    case 'machine_selectorized':
+    case 'cable':
+      return 10; // conservative default until the catalog/override gives the real step
     default:
-      // Selectorized stacks, plate-loaded machines, cables, kettlebells, bands:
-      // trust the catalog's default_increment_lb, floored to the 2.5 grid.
+      // Kettlebells, bands: trust the catalog hint, floored to the 2.5 grid.
       return snapIncrementTo2p5(ex.default_increment_lb);
   }
 }
 
-/**
- * Snap a raw target to the nearest physically loadable weight for this exercise.
- *
- * Defaults to floor because most callers hand us a rail-bound value and flooring
- * is the only mode that cannot breach a cap. The result is always a multiple of
- * 2.5, and for barbells never below the empty-bar floor of 45 lb.
- */
-export function snapToLoadable(
-  rawLb: number,
-  ex: Pick<Exercise, 'equipment' | 'default_increment_lb'>,
-  user: Pick<Profile, 'has_micro_plates' | 'dumbbell_increment_lb'>,
-  mode: 'floor' | 'nearest' = 'floor',
-): number {
-  const increment = equipmentIncrement(ex, user);
-  let snapped = toMultiple(rawLb, increment, mode);
-
-  if (ex.equipment === 'barbell') {
-    // Barbell floor: never emit below the empty bar.
-    snapped = Math.max(snapped, BAR_WEIGHT_LB);
-  } else {
-    // Nothing loadable is negative; clamp at zero for non-barbell equipment.
-    snapped = Math.max(snapped, 0);
-  }
-
-  return Number(snapped.toFixed(4));
+/** The lightest selectable weight: the stack minimum, or the empty bar for barbells. */
+function loadFloor(ex: IncExercise): number {
+  if (ex.weight_stack_min_lb != null && ex.weight_stack_min_lb > 0) return ex.weight_stack_min_lb;
+  return ex.equipment === 'barbell' ? BAR_WEIGHT_LB : 0;
 }
 
 /**
- * Predicate used by tests and assertions: is `lb` a value we could actually put
- * on the equipment? Multiple of the native increment (hence of 2.5), and at or
- * above the barbell floor when applicable.
+ * Snap a raw target to a physically selectable weight: `min + k × increment`,
+ * k ≥ 0. Defaults to floor because most callers hand us a rail-bound value and
+ * flooring is the only mode that cannot breach a cap. Below the minimum it
+ * returns the minimum (the lightest plate/pin), never zero or negative.
  */
-export function isLoadable(
-  lb: number,
-  ex: Pick<Exercise, 'equipment' | 'default_increment_lb'>,
-  user: Pick<Profile, 'has_micro_plates' | 'dumbbell_increment_lb'>,
-): boolean {
-  const increment = equipmentIncrement(ex, user);
-  const onGrid = Number((lb % increment).toFixed(4)) === 0;
-  const onGlobalGrid = Number((lb % ROUNDING_INCREMENT_LB).toFixed(4)) === 0;
-  if (ex.equipment === 'barbell' && lb < BAR_WEIGHT_LB) return false;
-  if (lb < 0) return false;
-  return onGrid && onGlobalGrid;
+export function snapToLoadable(
+  rawLb: number,
+  ex: IncExercise,
+  user: IncProfile,
+  mode: 'floor' | 'nearest' = 'floor',
+): number {
+  const inc = equipmentIncrement(ex, user);
+  const min = loadFloor(ex);
+  if (rawLb <= min) return min;
+  const q = (rawLb - min) / inc;
+  const steps = mode === 'floor' ? Math.floor(q) : Math.round(q);
+  return Number((min + steps * inc).toFixed(4));
+}
+
+/**
+ * Predicate used by tests and assertions: is `lb` a value we could actually
+ * select on this equipment? On the exercise's grid (`min + k × increment`) and at
+ * or above its minimum.
+ */
+export function isLoadable(lb: number, ex: IncExercise, user: IncProfile): boolean {
+  const inc = equipmentIncrement(ex, user);
+  const min = loadFloor(ex);
+  if (lb < min - 1e-9) return false;
+  return Number(((lb - min) % inc).toFixed(4)) === 0;
 }

@@ -16,6 +16,8 @@ export interface WarmupExercise {
   load_type: LoadType;
   is_compound: boolean;
   default_increment_lb: number;
+  weight_increment_lb?: number | null;
+  weight_stack_min_lb?: number | null;
 }
 export interface WarmupProfile {
   has_micro_plates: boolean;

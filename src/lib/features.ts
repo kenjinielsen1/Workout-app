@@ -46,6 +46,9 @@ export interface FeatureExercise {
   fatigue_cost: number;
   primary_muscles: string[];
   default_increment_lb: number;
+  /** Machine step/min for INCREMENTS.md rounding; carried through to snapToLoadable. */
+  weight_increment_lb?: number | null;
+  weight_stack_min_lb?: number | null;
 }
 
 export interface FeatureSet {

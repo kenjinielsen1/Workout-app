@@ -28,6 +28,8 @@ export interface RailExercise {
   equipment: Equipment;
   load_type: LoadType;
   default_increment_lb: number;
+  weight_increment_lb?: number | null;
+  weight_stack_min_lb?: number | null;
 }
 export interface RailProfile {
   bodyweight_lb: number;

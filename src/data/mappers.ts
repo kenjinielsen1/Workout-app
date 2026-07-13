@@ -16,6 +16,8 @@ export function rowToExercise(r: ExerciseRow): Exercise {
     is_compound: r.is_compound,
     is_unilateral: r.is_unilateral,
     default_increment_lb: Number(r.default_increment_lb),
+    weight_increment_lb: r.weight_increment_lb == null ? null : Number(r.weight_increment_lb),
+    weight_stack_min_lb: r.weight_stack_min_lb == null ? null : Number(r.weight_stack_min_lb),
     fatigue_cost: Number(r.fatigue_cost),
     primary_muscles: r.primary_muscles ?? [],
     secondary_muscles: r.secondary_muscles ?? [],

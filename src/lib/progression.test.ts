@@ -518,6 +518,53 @@ describe('deload transparency', () => {
   });
 });
 
+// --- INCREMENTS.md: machine/cable weights stay on the machine's grid ---------
+describe('per-machine increments (INCREMENTS.md)', () => {
+  const cableRow: ProgExercise = {
+    name: 'Cable Row',
+    movement_pattern: 'horizontal_pull',
+    equipment: 'cable',
+    load_type: 'total',
+    is_compound: true,
+    default_increment_lb: 5,
+    weight_increment_lb: 7, // odd stack step
+    weight_stack_min_lb: 21,
+  };
+  const onGrid = (w: number) => (w - 21) % 7 === 0 && w >= 21;
+
+  it('every emitted weight sits on the exercise grid, not the 2.5 grid', () => {
+    const actions = new Set<string>();
+    for (const [reps, rir] of [[10, 4], [8, 2], [5, 0], [6, 1]] as const) {
+      const hist = [0, 1, 2, 3].map((k) => ({
+        performed_at: d(k),
+        target_reps: 8,
+        session_rpe: 7,
+        sets: nSets(3, 70, reps, rir), // 70 is on the 21+7k grid
+      }));
+      const r = recommendProgression(
+        increaseCtx({ exercise: cableRow, history: hist, bestHistoricalE1RM: 250 }),
+      );
+      actions.add(r.action);
+      expect(onGrid(r.target_weight_lb)).toBe(true);
+    }
+    expect(actions.size).toBeGreaterThan(0);
+  });
+
+  it('an increase steps by at least the machine increment, staying on grid', () => {
+    const hist = [0, 1, 2, 3].map((k, i) => ({
+      performed_at: d(k),
+      target_reps: 8,
+      session_rpe: [8, 7.5, 7, 6.5][i]!,
+      sets: nSets(3, 70 + i * 7, 10, 4), // rising, on grid
+    }));
+    const r = recommendProgression(
+      increaseCtx({ exercise: cableRow, history: hist, bestHistoricalE1RM: 400 }),
+    );
+    expect(r.action).toBe('increase_load');
+    expect(onGrid(r.target_weight_lb)).toBe(true);
+  });
+});
+
 // --- guards -----------------------------------------------------------------
 describe('guards', () => {
   it('throws on empty history', () => {

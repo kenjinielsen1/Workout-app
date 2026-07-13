@@ -43,6 +43,9 @@ export interface ProgExercise {
   load_type: LoadType;
   is_compound: boolean;
   default_increment_lb: number;
+  /** Machine step/min for INCREMENTS.md rounding (null/absent → equipment default). */
+  weight_increment_lb?: number | null;
+  weight_stack_min_lb?: number | null;
 }
 
 export interface ProgProfile {
