@@ -44,11 +44,12 @@ export function recommendTarget(
   profile: ProgProfile,
   ml: MLPrediction | null = null,
   alphaCap = 1,
+  dailyReadinessValue: number | null = null,
 ): FinalTarget | null {
   const series = metricsSeries(allSessions, ex, profile);
   if (series.length === 0) return null;
 
-  const ctx = buildProgContext(allSessions, ex, index, profile);
+  const ctx = buildProgContext(allSessions, ex, index, profile, undefined, dailyReadinessValue);
   const rule = recommendProgression(ctx);
 
   const last = series[series.length - 1]!;

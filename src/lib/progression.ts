@@ -15,6 +15,15 @@ import type { Equipment, Goal, LoadType, MovementPattern } from './types';
 
 // --- tunables (priors; ML replaces these later, never the structure) --------
 export const SIGNAL_WEIGHTS = { s1: 0.3, s2: 0.25, s3: 0.2, s4: 0.15, s5: 0.1 } as const;
+// FEATURES.md #2 — daily check-in signal S6. When a check-in exists it takes
+// weight 0.15 and the five base signals are scaled by 0.85 (proportional
+// rebalance, keeps the composite in [-1,1]); a skipped check-in leaves the base
+// composite untouched, so the engine behaves exactly as before.
+export const S6_WEIGHT = 0.15;
+const BASE_SCALE = 1 - S6_WEIGHT; // 0.85
+// Asymmetry: a wrecked day is strong evidence NOT to push; a great day is weak
+// evidence you should. Cap the positive contribution to half the negative.
+export const S6_POSITIVE_CAP = 0.5;
 export const READINESS_INCREASE = 0.6;
 export const READINESS_ADD_REP = 0.25;
 export const READINESS_REPEAT = -0.2;
@@ -77,6 +86,9 @@ export interface ProgContext {
   sessionsSinceLastDeload: number;
   /** Was the previous recommendation in the flag band? Two in a row → deload. */
   previousWasFlagged?: boolean;
+  /** Today's daily-readiness modifier in [-1,1] from the session check-in
+   *  (FEATURES.md #2). null/undefined = skipped → S6 neutral, no effect. */
+  dailyReadiness?: number | null;
 }
 
 // --- output -----------------------------------------------------------------
@@ -95,6 +107,15 @@ export interface Signals {
   s3: number;
   s4: number;
   s5: number;
+  /** Daily readiness from the session check-in (FEATURES.md #2). 0 when skipped. */
+  s6?: number;
+}
+
+/** The three session-start check-in taps (1–5 each), or nulls when skipped. */
+export interface DailyCheckin {
+  sleep_quality: number | null;
+  soreness: number | null; // 5 = very sore
+  energy: number | null;
 }
 
 export interface ProgRecommendation {
@@ -266,17 +287,37 @@ export function readinessSignals(ctx: ProgContext): Signals {
   // S5 — session RPE trend (inverted).
   const s5 = clamp(-rpeSlopeLast4(history) / 0.5);
 
-  return { s1, s2, s3, s4, s5 };
+  // S6 — daily readiness from the check-in, asymmetrically capped on the upside.
+  const dr = ctx.dailyReadiness;
+  const s6 = dr == null ? 0 : dr >= 0 ? dr * S6_POSITIVE_CAP : dr;
+
+  return { s1, s2, s3, s4, s5, s6 };
 }
 
-export function compositeReadiness(sig: Signals): number {
-  return (
+/** Fold the session check-in into a daily modifier in [-1,1]. Skipped (any tap
+ *  missing) → 0, so the engine is unaffected (FEATURES.md #2). */
+export function dailyReadiness(c: DailyCheckin | null | undefined): number {
+  if (!c || c.sleep_quality == null || c.soreness == null || c.energy == null) return 0;
+  const sleep = (c.sleep_quality - 3) / 2; // -1..1
+  const soreness = (3 - c.soreness) / 2; // inverted: sore → negative
+  const energy = (c.energy - 3) / 2;
+  return clamp(0.4 * sleep + 0.35 * soreness + 0.25 * energy, -1, 1);
+}
+
+/**
+ * Composite readiness. Without a check-in (`hasCheckin` false) this is the
+ * original five-signal blend, unchanged. With one, the base is scaled by 0.85
+ * and S6 contributes 0.15 — a proportional rebalance that keeps the range.
+ */
+export function compositeReadiness(sig: Signals, hasCheckin = false): number {
+  const base =
     SIGNAL_WEIGHTS.s1 * sig.s1 +
     SIGNAL_WEIGHTS.s2 * sig.s2 +
     SIGNAL_WEIGHTS.s3 * sig.s3 +
     SIGNAL_WEIGHTS.s4 * sig.s4 +
-    SIGNAL_WEIGHTS.s5 * sig.s5
-  );
+    SIGNAL_WEIGHTS.s5 * sig.s5;
+  if (!hasCheckin) return base;
+  return BASE_SCALE * base + S6_WEIGHT * (sig.s6 ?? 0);
 }
 
 // Part 6 — calibration offset update (exponentially weighted).
@@ -322,7 +363,7 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
   const label = ex.name ? `${ex.name}: ` : '';
 
   const signals = readinessSignals(ctx);
-  const readiness = compositeReadiness(signals);
+  const readiness = compositeReadiness(signals, ctx.dailyReadiness != null);
   const rpeSlope = rpeSlopeLast4(history);
   const vetoes: string[] = [];
 

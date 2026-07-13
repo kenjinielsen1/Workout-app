@@ -50,6 +50,10 @@ export function rowToWorkout(r: WorkoutRow): Workout {
     performed_at: r.performed_at,
     notes: r.notes,
     session_rpe: r.session_rpe === null ? null : Number(r.session_rpe),
+    sleep_quality: r.sleep_quality ?? null,
+    soreness: r.soreness ?? null,
+    energy: r.energy ?? null,
+    readiness_score: r.readiness_score === null || r.readiness_score === undefined ? null : Number(r.readiness_score),
   };
 }
 

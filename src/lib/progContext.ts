@@ -44,6 +44,7 @@ export function buildProgContext(
   index: Map<string, FeatureExercise>,
   profile: ProgProfile,
   refT?: number,
+  dailyReadinessValue: number | null = null,
 ): ProgContext {
   const exerciseSessions = allSessions
     .filter((s) => s.exercise_id === ex.id)
@@ -81,6 +82,7 @@ export function buildProgContext(
     bestHistoricalE1RM,
     sessionsSinceLastDeload: sessionsSinceLastDeload(metrics.map((m) => m.topWeight)),
     previousWasFlagged: false,
+    dailyReadiness: dailyReadinessValue,
   };
 }
 

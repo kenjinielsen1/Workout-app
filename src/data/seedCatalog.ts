@@ -52,6 +52,10 @@ export function demoHistory(
       performed_at: new Date(Date.UTC(2026, 3, 1 + i * 4)).toISOString(),
       notes: null,
       session_rpe: 7,
+      sleep_quality: null,
+      soreness: null,
+      energy: null,
+      readiness_score: null,
     });
     const rows: Array<[number, number, number, boolean]> = [
       [w - 90, 5, 4, true],

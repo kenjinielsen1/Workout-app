@@ -34,8 +34,8 @@ describe('mappers', () => {
 
   it('groups sets into per-workout sessions ordered oldest-first', () => {
     const workouts = new Map<string, Workout>([
-      ['w2', { id: 'w2', user_id: 'u', performed_at: '2026-01-05T00:00:00Z', notes: null, session_rpe: 8 }],
-      ['w1', { id: 'w1', user_id: 'u', performed_at: '2026-01-01T00:00:00Z', notes: null, session_rpe: 7 }],
+      ['w2', { id: 'w2', user_id: 'u', performed_at: '2026-01-05T00:00:00Z', notes: null, session_rpe: 8, sleep_quality: null, soreness: null, energy: null, readiness_score: null }],
+      ['w1', { id: 'w1', user_id: 'u', performed_at: '2026-01-01T00:00:00Z', notes: null, session_rpe: 7, sleep_quality: null, soreness: null, energy: null, readiness_score: null }],
     ]);
     const sets: LoggedSet[] = [
       { id: 's3', workout_id: 'w2', exercise_id: 'e', set_number: 1, weight_lb: 210, reps: 5, rir: 2, is_warmup: false, failed: false, tempo: null },

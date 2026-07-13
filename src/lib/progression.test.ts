@@ -3,9 +3,11 @@ import { snapToLoadable } from './rounding';
 import {
   compositeReadiness,
   correctedRIR,
+  dailyReadiness,
   readinessSignals,
   recommendProgression,
   repRangeForGoal,
+  READINESS_INCREASE,
   targetRIRForGoal,
   updateCalibrationOffset,
   type ProgContext,
@@ -346,6 +348,70 @@ describe('signals', () => {
   it('targetRIR reflects the goal', () => {
     expect(targetRIRForGoal('strength')).toBe(4);
     expect(targetRIRForGoal('hypertrophy')).toBe(2);
+  });
+});
+
+// --- FEATURES.md #2: session-start readiness check-in (S6) -------------------
+describe('daily readiness check-in (S6)', () => {
+  it('folds the three taps into [-1,1]; skipped taps → 0 (neutral)', () => {
+    expect(dailyReadiness(null)).toBe(0);
+    expect(dailyReadiness({ sleep_quality: null, soreness: null, energy: null })).toBe(0);
+    expect(dailyReadiness({ sleep_quality: 3, soreness: 3, energy: 3 })).toBe(0); // average day
+    expect(dailyReadiness({ sleep_quality: 5, soreness: 1, energy: 5 })).toBeCloseTo(1, 10);
+    expect(dailyReadiness({ sleep_quality: 1, soreness: 5, energy: 1 })).toBeCloseTo(-1, 10);
+    // a partial check-in is treated as skipped
+    expect(dailyReadiness({ sleep_quality: 5, soreness: null, energy: 5 })).toBe(0);
+  });
+
+  it('skipped check-in → S6 = 0 and the engine behaves exactly as before', () => {
+    const withNull = recommendProgression(increaseCtx({ dailyReadiness: null }));
+    const without = recommendProgression(increaseCtx());
+    expect(withNull.action).toBe('increase_load');
+    expect(withNull.readiness).toBe(without.readiness); // identical composite
+    expect(readinessSignals(increaseCtx()).s6).toBe(0);
+  });
+
+  it('worst-case check-in (1/5/1) suppresses an otherwise-ready increase', () => {
+    const dr = dailyReadiness({ sleep_quality: 1, soreness: 5, energy: 1 }); // -1
+    // An "otherwise-ready" state that just clears the bar: easy sets at the rep
+    // top (s1,s3,s4 high) but flat e1RM (s2≈0) → base readiness ~0.65.
+    const borderline = {
+      history: [0, 1, 2, 3].map((k) => ({
+        performed_at: d(k),
+        target_reps: 8,
+        session_rpe: 7,
+        sets: nSets(3, 100, 10, 4), // 100×10 @ 4 RIR, unchanged week to week
+      })),
+      acwr: 1.0,
+      bestHistoricalE1RM: 300,
+    };
+    const ready = recommendProgression(increaseCtx(borderline));
+    expect(ready.action).toBe('increase_load'); // clears the bar without a check-in
+    const r = recommendProgression(increaseCtx({ ...borderline, dailyReadiness: dr }));
+    expect(r.action).not.toBe('increase_load'); // wrecked day holds the load bump back
+    expect(r.readiness).toBeLessThan(READINESS_INCREASE);
+  });
+
+  it('best-case check-in cannot override a hard veto (a failed set blocks the increase)', () => {
+    const dr = dailyReadiness({ sleep_quality: 5, soreness: 1, energy: 5 }); // +1
+    const hist = risingHistory([100, 105, 110, 115], 10, 4, 10, [8, 7.5, 7, 6.5]);
+    // Fail the final set of the most recent session → Part 5 veto on increases.
+    const last = hist[hist.length - 1]!;
+    last.sets = [...nSets(2, 115, 10, 4), { weight_lb: 115, reps: 4, rir: 0, failed: true }];
+    const r = recommendProgression(increaseCtx({ history: hist, dailyReadiness: dr }));
+    expect(r.action).not.toBe('increase_load');
+  });
+
+  it('positive contribution is capped below the magnitude of the negative (asymmetry)', () => {
+    const up = readinessSignals(increaseCtx({ dailyReadiness: 1 })).s6!;
+    const down = readinessSignals(increaseCtx({ dailyReadiness: -1 })).s6!;
+    expect(up).toBeGreaterThan(0);
+    expect(down).toBeLessThan(0);
+    expect(Math.abs(up)).toBeLessThan(Math.abs(down)); // feeling great is weak evidence
+    // and the same asymmetry survives into the composite contribution
+    const cUp = compositeReadiness({ s1: 0, s2: 0, s3: 0, s4: 0, s5: 0, s6: up }, true);
+    const cDown = compositeReadiness({ s1: 0, s2: 0, s3: 0, s4: 0, s5: 0, s6: down }, true);
+    expect(Math.abs(cUp)).toBeLessThan(Math.abs(cDown));
   });
 });
 

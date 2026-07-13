@@ -180,7 +180,7 @@ class MockSource implements RemoteSource {
 }
 
 describe('remote → local hydration (returning user, new device)', () => {
-  const w: Workout = { id: 'w-remote', user_id: U, performed_at: '2026-02-01T00:00:00Z', notes: null, session_rpe: 8 };
+  const w: Workout = { id: 'w-remote', user_id: U, performed_at: '2026-02-01T00:00:00Z', notes: null, session_rpe: 8, sleep_quality: null, soreness: null, energy: null, readiness_score: null };
   const s: LoggedSet = { id: 's-remote', workout_id: 'w-remote', exercise_id: 'barbell-deadlift', set_number: 1, weight_lb: 315, reps: 5, rir: 2, is_warmup: false, failed: false, tempo: null };
 
   it('pulls the server truth into an empty local store', async () => {

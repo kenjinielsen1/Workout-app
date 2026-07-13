@@ -11,6 +11,7 @@ import type {
   OutcomeRow,
   Profile,
   Workout,
+  WorkoutCheckin,
 } from './domain';
 
 export interface SaveRecommendationInput {
@@ -59,8 +60,9 @@ export interface WorkoutStore {
   /** Every session across all exercises (for movement-pattern ACWR + ML features). */
   getAllSessions(userId: string): Promise<AllSession[]>;
 
-  /** Open (or reuse) a workout to log sets into. */
-  startWorkout(userId: string, performedAt?: string): Promise<Workout>;
+  /** Open (or reuse) a workout to log sets into. Optional session-start check-in
+   *  (FEATURES.md #2) is stored on the workout. */
+  startWorkout(userId: string, performedAt?: string, checkin?: WorkoutCheckin): Promise<Workout>;
   logSet(input: LogSetInput): Promise<void>;
   /** Remove a logged set (local + queued delete to the backend). */
   deleteSet(setId: string): Promise<void>;

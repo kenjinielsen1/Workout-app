@@ -32,6 +32,8 @@ export class SupabaseRemoteSync implements RemoteSync {
     return this.upsert('workouts', {
       id: w.id, user_id: w.user_id, performed_at: w.performed_at,
       notes: w.notes, session_rpe: w.session_rpe,
+      sleep_quality: w.sleep_quality, soreness: w.soreness,
+      energy: w.energy, readiness_score: w.readiness_score,
     });
   }
 

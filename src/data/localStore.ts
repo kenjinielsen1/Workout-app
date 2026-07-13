@@ -13,7 +13,7 @@ import { groupAllSessions, groupSetsIntoSessions } from './mappers';
 import { PROFILE_DEFAULTS } from './dbTypes';
 import { demoHistory, seedExercises } from './seedCatalog';
 import type {
-  AllSession, CreateExerciseInput, Exercise, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, Workout,
+  AllSession, CreateExerciseInput, Exercise, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, Workout, WorkoutCheckin,
 } from './domain';
 import { slugify } from '../lib/newExercise';
 import type { LogSetInput, SaveRecommendationInput, WorkoutStore } from './store';
@@ -165,11 +165,15 @@ export class LocalFirstStore implements WorkoutStore {
   }
 
   // --- writes (local-first, enqueue sync) -----------------------------------
-  async startWorkout(userId: string, performedAt?: string): Promise<Workout> {
+  async startWorkout(userId: string, performedAt?: string, checkin?: WorkoutCheckin): Promise<Workout> {
     await this.ready;
     const w: Workout = {
       id: uuid(), user_id: userId, performed_at: performedAt ?? new Date().toISOString(),
       notes: null, session_rpe: null,
+      sleep_quality: checkin?.sleep_quality ?? null,
+      soreness: checkin?.soreness ?? null,
+      energy: checkin?.energy ?? null,
+      readiness_score: checkin?.readiness_score ?? null,
     };
     await this.db.put('workouts', w);
     await this.enqueue({ kind: 'workout', payload: w });

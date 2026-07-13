@@ -16,6 +16,7 @@ import type {
   Profile,
   Recommendation,
   Workout,
+  WorkoutCheckin,
 } from './domain';
 import { PROFILE_DEFAULTS } from './dbTypes';
 import type { LogSetInput, SaveRecommendationInput, WorkoutStore } from './store';
@@ -67,7 +68,7 @@ export class InMemoryWorkoutStore implements WorkoutStore {
     weeks.forEach(([w, reps], i) => {
       const id = nextId('wk');
       const performed_at = new Date(Date.UTC(2026, 3, 1 + i * 4)).toISOString();
-      this.workouts.set(id, { id, user_id: userId, performed_at, notes: null, session_rpe: 7 });
+      this.workouts.set(id, { id, user_id: userId, performed_at, notes: null, session_rpe: 7, sleep_quality: null, soreness: null, energy: null, readiness_score: null });
       const rows: Array<[number, number, number, boolean]> = [
         [w - 90, 5, 4, true],
         [w, reps, 2, false],
@@ -134,13 +135,17 @@ export class InMemoryWorkoutStore implements WorkoutStore {
     return groupAllSessions(sets, userWorkouts);
   }
 
-  async startWorkout(userId: string, performedAt?: string): Promise<Workout> {
+  async startWorkout(userId: string, performedAt?: string, checkin?: WorkoutCheckin): Promise<Workout> {
     const w: Workout = {
       id: nextId('wk'),
       user_id: userId,
       performed_at: performedAt ?? new Date().toISOString(),
       notes: null,
       session_rpe: null,
+      sleep_quality: checkin?.sleep_quality ?? null,
+      soreness: checkin?.soreness ?? null,
+      energy: checkin?.energy ?? null,
+      readiness_score: checkin?.readiness_score ?? null,
     };
     this.workouts.set(w.id, w);
     return w;

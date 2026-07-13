@@ -28,6 +28,7 @@ import type {
   OutcomeRow,
   Profile,
   Workout,
+  WorkoutCheckin,
 } from './domain';
 import { slugify } from '../lib/newExercise';
 import type { LogSetInput, SaveRecommendationInput, WorkoutStore } from './store';
@@ -140,10 +141,17 @@ export class SupabaseWorkoutStore implements WorkoutStore {
     return groupAllSessions((setRows as SetRow[]).map(rowToSet), workouts);
   }
 
-  async startWorkout(userId: string, performedAt?: string): Promise<Workout> {
+  async startWorkout(userId: string, performedAt?: string, checkin?: WorkoutCheckin): Promise<Workout> {
     const { data, error } = await this.db
       .from('workouts')
-      .insert({ user_id: userId, performed_at: performedAt ?? new Date().toISOString() })
+      .insert({
+        user_id: userId,
+        performed_at: performedAt ?? new Date().toISOString(),
+        sleep_quality: checkin?.sleep_quality ?? null,
+        soreness: checkin?.soreness ?? null,
+        energy: checkin?.energy ?? null,
+        readiness_score: checkin?.readiness_score ?? null,
+      })
       .select('*')
       .single();
     if (error) throw error;

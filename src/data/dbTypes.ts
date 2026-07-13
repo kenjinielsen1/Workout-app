@@ -34,6 +34,10 @@ export interface WorkoutRow {
   performed_at: string;
   notes: string | null;
   session_rpe: number | null;
+  sleep_quality: number | null;
+  soreness: number | null;
+  energy: number | null;
+  readiness_score: number | null;
 }
 
 export interface SetRow {

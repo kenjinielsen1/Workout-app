@@ -54,7 +54,18 @@ export interface Workout {
   performed_at: string;
   notes: string | null;
   session_rpe: number | null;
+  /** Session-start readiness check-in (FEATURES.md #2); null when skipped. */
+  sleep_quality: number | null;
+  soreness: number | null;
+  energy: number | null;
+  readiness_score: number | null;
 }
+
+/** The session-start check-in payload stored on a workout (FEATURES.md #2). */
+export type WorkoutCheckin = Pick<
+  Workout,
+  'sleep_quality' | 'soreness' | 'energy' | 'readiness_score'
+>;
 
 export interface LoggedSet {
   id: string;

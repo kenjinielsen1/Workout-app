@@ -7,11 +7,13 @@ import { exerciseFeatures, recommendTarget, sessionsForExercise } from '../lib/r
 import { isMLConfigured, predict } from '../lib/mlClient';
 import type { FinalTarget, MLPrediction } from '../lib/blend';
 import { bestSetE1RM } from '../lib/exerciseStats';
+import { dailyReadiness, type DailyCheckin } from '../lib/progression';
 import { formatDuration } from '../lib/liveProgression';
 import { LogSet, type LoggedSet } from './LogSet';
 import { ExerciseDetail } from './ExerciseDetail';
 import { ExercisePicker, type PickerExercise } from '../components/ExercisePicker';
 import { WorkoutLog, type WorkoutLogEntry } from '../components/WorkoutLog';
+import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCheckIn';
 import { Settings } from './Settings';
 
 type Tab = 'detail' | 'log';
@@ -31,6 +33,13 @@ export function Home() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Session-start readiness check-in (FEATURES.md #2). Persisted per calendar day
+  // so it survives reloads and re-asks tomorrow. `dismissed` covers skip too.
+  const today = new Date().toISOString().slice(0, 10);
+  const checkinKey = `po:checkin:${userId}:${today}`;
+  const [checkin, setCheckin] = useState<DailyCheckin | null>(null);
+  const [checkinDismissed, setCheckinDismissed] = useState(false);
+
   // Workout timer: starts at the first logged set of the session, spans exercises,
   // survives a reload (localStorage), stops on finish.
   const timerKey = `po:workoutStart:${userId}`;
@@ -49,6 +58,37 @@ export function Home() {
     const t = raw ? Number(raw) : NaN;
     if (Number.isFinite(t) && t > 0) setWorkoutStartedAt(t);
   }, [timerKey]);
+
+  // Restore today's check-in (answered or skipped) after a reload.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(checkinKey);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { checkin: DailyCheckin | null; dismissed: boolean };
+      setCheckin(saved.checkin ?? null);
+      setCheckinDismissed(saved.dismissed ?? false);
+    } catch {
+      /* corrupt entry — re-ask */
+    }
+  }, [checkinKey]);
+
+  const readinessValue = dailyReadiness(checkin);
+
+  const submitCheckin = useCallback(
+    (answers: CheckinAnswers) => {
+      const c: DailyCheckin = { ...answers };
+      setCheckin(c);
+      setCheckinDismissed(true);
+      localStorage.setItem(checkinKey, JSON.stringify({ checkin: c, dismissed: true }));
+    },
+    [checkinKey],
+  );
+
+  const skipCheckin = useCallback(() => {
+    setCheckin(null);
+    setCheckinDismissed(true);
+    localStorage.setItem(checkinKey, JSON.stringify({ checkin: null, dismissed: true }));
+  }, [checkinKey]);
 
   // Tick every second while the timer runs.
   useEffect(() => {
@@ -116,9 +156,13 @@ export function Home() {
       setCounter.current = 0;
 
       // OFFLINE-FIRST live path: the shown number is pure local TS, no network.
-      // Prefer a target precomputed at the last session's finish; else compute now.
+      // Prefer a target precomputed at the last session's finish — but only when
+      // there's no check-in to fold in (the precompute predates today's readiness).
       const precomputed = (await store.getNextSession(userId, exId)) as FinalTarget | null;
-      const fresh = precomputed ?? recommendTarget(all, ex, index, p, null, p.ml_alpha_cap);
+      const fresh =
+        readinessValue === 0 && precomputed
+          ? precomputed
+          : recommendTarget(all, ex, index, p, null, p.ml_alpha_cap, readinessValue);
       const shown = fresh ?? deriveInitialTarget(all.filter((s) => s.exercise_id === exId), ex, p.goal);
       setTarget(shown);
 
@@ -146,12 +190,12 @@ export function Home() {
         const feats = exerciseFeatures(all, ex, index, p);
         void predict(feats, all.length, sessionsForExercise(all, exId)).then((ml) => {
           if (!ml || workoutId.current !== null) return;
-          const refined = recommendTarget(all, ex, index, p, ml, p.ml_alpha_cap);
+          const refined = recommendTarget(all, ex, index, p, ml, p.ml_alpha_cap, readinessValue);
           if (refined) setTarget(refined);
         });
       }
     },
-    [store, userId, exercises, index],
+    [store, userId, exercises, index, readinessValue],
   );
 
   // Recompute when the exercise changes (or once everything has loaded).
@@ -163,7 +207,12 @@ export function Home() {
     async (logged: LoggedSet) => {
       startTimerIfNeeded(); // first set of the session starts the workout clock
       if (!workoutId.current) {
-        const w = await store.startWorkout(userId);
+        const w = await store.startWorkout(userId, undefined, {
+          sleep_quality: checkin?.sleep_quality ?? null,
+          soreness: checkin?.soreness ?? null,
+          energy: checkin?.energy ?? null,
+          readiness_score: checkin ? readinessValue : null,
+        });
         workoutId.current = w.id;
       }
       setCounter.current += 1;
@@ -181,7 +230,7 @@ export function Home() {
       setAllSessions(await store.getAllSessions(userId)); // refresh detail; target holds
       void store.flush(); // sync to Supabase within ~a second (no-op offline/demo)
     },
-    [store, userId, selectedId, startTimerIfNeeded],
+    [store, userId, selectedId, startTimerIfNeeded, checkin, readinessValue],
   );
 
   const handleSaveSettings = useCallback(
@@ -330,7 +379,12 @@ export function Home() {
       </header>
 
       {tab === 'log' ? (
-        <div className="flex flex-col">
+        <div className="flex flex-col gap-2 pt-3">
+          {!checkinDismissed && workoutStartedAt === null && (
+            <div className="px-4">
+              <ReadinessCheckIn onSubmit={submitCheckin} onSkip={skipCheckin} />
+            </div>
+          )}
           <LogSet
             key={selectedId}
             userId={userId}
