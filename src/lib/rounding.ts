@@ -3,6 +3,7 @@ import {
   BARBELL_INCREMENT_NO_MICRO_LB,
   ROUNDING_INCREMENT_LB,
 } from './constants';
+import { BAR_KG, BARBELL_KG_STEP, kgToLb, lbToKg } from './units';
 import type { Exercise, Profile } from './types';
 
 /**
@@ -23,7 +24,7 @@ type IncExercise = Pick<
   Exercise,
   'equipment' | 'default_increment_lb' | 'weight_increment_lb' | 'weight_stack_min_lb'
 >;
-type IncProfile = Pick<Profile, 'has_micro_plates' | 'dumbbell_increment_lb'>;
+type IncProfile = Pick<Profile, 'has_micro_plates' | 'dumbbell_increment_lb' | 'plate_system'>;
 
 /** Nearest multiple of 2.5. */
 export const round = (lb: number): number =>
@@ -89,6 +90,18 @@ export function snapToLoadable(
   user: IncProfile,
   mode: 'floor' | 'nearest' = 'floor',
 ): number {
+  // Metric plate system: a barbell snaps on the 20 kg + 0.5 kg grid, then the
+  // loadable kg value is STORED back in lb (UNITS.md). The engine still sees lb.
+  if (ex.equipment === 'barbell' && user.plate_system === 'metric') {
+    const rawKg = lbToKg(rawLb);
+    if (rawKg <= BAR_KG) return kgToLb(BAR_KG); // 20 kg floor (in lb)
+    const q = (rawKg - BAR_KG) / BARBELL_KG_STEP;
+    const steps = mode === 'floor' ? Math.floor(q) : Math.round(q);
+    // Full precision: the stored lb is the exact kg-grid value; don't round it to
+    // the 2.5 grid (that would make it unloadable in kg). It's still just lb.
+    return kgToLb(BAR_KG + steps * BARBELL_KG_STEP);
+  }
+
   const inc = equipmentIncrement(ex, user);
   const min = loadFloor(ex);
   if (rawLb <= min) return min;
@@ -103,6 +116,12 @@ export function snapToLoadable(
  * or above its minimum.
  */
 export function isLoadable(lb: number, ex: IncExercise, user: IncProfile): boolean {
+  if (ex.equipment === 'barbell' && user.plate_system === 'metric') {
+    const kg = lbToKg(lb);
+    if (kg < BAR_KG - 1e-6) return false;
+    const k = (kg - BAR_KG) / BARBELL_KG_STEP;
+    return Math.abs(k - Math.round(k)) < 1e-6; // on the 20 + 0.5k kg grid
+  }
   const inc = equipmentIncrement(ex, user);
   const min = loadFloor(ex);
   if (lb < min - 1e-9) return false;

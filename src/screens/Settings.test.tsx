@@ -16,6 +16,8 @@ const profile: Profile = {
   rir_calibration_offset: 0,
   ml_alpha_cap: 1,
   warmup_enabled: false,
+  weight_unit: 'lb',
+  plate_system: 'imperial',
 };
 
 function setup() {

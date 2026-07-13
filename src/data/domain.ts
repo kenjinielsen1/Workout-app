@@ -3,6 +3,7 @@
 // Exercise/Profile satisfies them directly with no adapter.
 
 import type { Equipment, Goal, LoadType, MovementPattern } from '../lib/types';
+import type { PlateSystem, WeightUnit } from '../lib/units';
 
 export interface Exercise {
   id: string;
@@ -61,6 +62,9 @@ export interface Profile {
   ml_alpha_cap: number;
   /** Opt-in prescribed warm-up ramp (FEATURES.md #1). Off by default. */
   warmup_enabled: boolean;
+  /** Display unit + loadable-plate system (UNITS.md). Storage is always lb. */
+  weight_unit: WeightUnit;
+  plate_system: PlateSystem;
 }
 
 export interface Workout {

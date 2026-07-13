@@ -4,6 +4,7 @@
 // dependency on the Supabase CLI.
 
 import type { Equipment, Goal, LoadType, MovementPattern } from '../lib/types';
+import type { PlateSystem, WeightUnit } from '../lib/units';
 
 export interface ExerciseRow {
   id: string;
@@ -66,6 +67,8 @@ export interface ProfileRow {
   rir_calibration_offset: number | null;
   ml_alpha_cap: number | null;
   warmup_enabled: boolean | null;
+  weight_unit: WeightUnit | null;
+  plate_system: PlateSystem | null;
 }
 
 /** Profile defaults for a brand-new user (no row yet, or nullable columns). */
@@ -79,4 +82,6 @@ export const PROFILE_DEFAULTS = {
   rir_calibration_offset: 0,
   ml_alpha_cap: 1,
   warmup_enabled: false,
+  weight_unit: 'lb' as WeightUnit,
+  plate_system: 'imperial' as PlateSystem,
 };

@@ -1,6 +1,8 @@
 // Domain types shared by the pure utilities. These mirror the DB schema but are
 // intentionally minimal — only the fields the load/rounding math actually reads.
 
+import type { PlateSystem } from './units';
+
 export type MovementPattern =
   | 'squat'
   | 'hinge'
@@ -58,4 +60,7 @@ export interface Profile {
   has_micro_plates: boolean;
   /** Per-hand dumbbell increment; defaults to 5 in the schema. */
   dumbbell_increment_lb: number;
+  /** Loadable-plate system (UNITS.md): 'metric' snaps barbells to the 20 kg grid.
+   *  Absent → 'imperial'. Storage stays lb either way. */
+  plate_system?: PlateSystem;
 }

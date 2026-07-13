@@ -123,6 +123,42 @@ describe('snapToLoadable — dumbbells and machines (INCREMENTS.md)', () => {
   });
 });
 
+describe('metric plate system — barbell snaps to the 20 kg grid (UNITS.md)', () => {
+  const KG = 2.2046226218;
+  const metric = { ...withMicro, plate_system: 'metric' as const };
+  const onKgGrid = (lb: number) => {
+    const k = (lb / KG - 20) / 0.5;
+    return Math.abs(k - Math.round(k)) < 1e-6 && lb / KG >= 20 - 1e-6;
+  };
+
+  it('a barbell target lands on 20 + 0.5k kg, stored in lb', () => {
+    // 100.6 kg → floor to 100.5 kg → stored lb.
+    const stored = snapToLoadable(100.6 * KG, barbell, metric, 'floor');
+    expect(stored / KG).toBeCloseTo(100.5, 6);
+    expect(onKgGrid(stored)).toBe(true);
+    expect(isLoadable(stored, barbell, metric)).toBe(true);
+  });
+
+  it('every random metric-barbell target is on the kg grid, never an unloadable value', () => {
+    for (let i = 0; i < 2000; i++) {
+      const rawLb = Math.random() * 600;
+      const stored = snapToLoadable(rawLb, barbell, metric, 'floor');
+      expect(onKgGrid(stored)).toBe(true);
+    }
+  });
+
+  it('the metric barbell floor is 20 kg (in lb), never below', () => {
+    expect(snapToLoadable(0, barbell, metric)).toBeCloseTo(20 * KG, 6);
+    expect(snapToLoadable(30, barbell, metric)).toBeCloseTo(20 * KG, 6); // 30 lb < 20 kg
+    expect(snapToLoadable(-100, barbell, metric)).toBeCloseTo(20 * KG, 6);
+  });
+
+  it('leaves the imperial barbell grid unchanged (regression)', () => {
+    expect(snapToLoadable(227.3, barbell, withMicro)).toBe(225); // 45 + 2.5k, unchanged
+    expect(snapToLoadable(0, barbell, withMicro)).toBe(45);
+  });
+});
+
 describe('rounding invariant — 10k random model outputs under a safety cap', () => {
   it('every emitted target is on its exercise grid, loadable, and never over the cap', () => {
     const threeLb: Ex = { equipment: 'cable', default_increment_lb: 5, weight_increment_lb: 3, weight_stack_min_lb: 5 };
