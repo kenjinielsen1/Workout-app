@@ -57,3 +57,9 @@ export function formatWeightUnit(lb: number, unit: WeightUnit, kgStep = BARBELL_
 export function displayStep(lbStep: number, unit: WeightUnit): number {
   return unit === 'kg' ? Number(lbToKg(lbStep).toFixed(2)) : lbStep;
 }
+
+/** e1RM/tonnage-style display: whole numbers in the display unit. Matches the
+ *  prior lb Math.round behavior exactly, so lb users are unchanged. */
+export function formatE1RM(lb: number, unit: WeightUnit): string {
+  return String(Math.round(toDisplay(lb, unit)));
+}

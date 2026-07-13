@@ -523,7 +523,7 @@ export function Home() {
             onLogSet={onLogSet}
             onDeleteSet={onDeleteSet}
           />
-          <WorkoutLog entries={workoutLog} currentExerciseId={selectedId} />
+          <WorkoutLog entries={workoutLog} currentExerciseId={selectedId} unit={profile?.weight_unit} />
           <div className="mx-auto w-full max-w-md px-4 py-6">
             <button
               type="button"

@@ -12,6 +12,7 @@ import type { LoadType } from '../lib/types';
 import { LineChart, type LinePoint } from '../components/LineChart';
 import { BarChart } from '../components/BarChart';
 import { SessionHistory } from '../components/SessionHistory';
+import { formatE1RM, formatWeight, toDisplay, type WeightUnit } from '../lib/units';
 
 export interface DetailExercise {
   name: string;
@@ -20,6 +21,7 @@ export interface DetailExercise {
 
 export interface DetailProfile {
   bodyweight_lb: number;
+  weight_unit?: WeightUnit;
 }
 
 interface ExerciseDetailProps {
@@ -43,21 +45,23 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub?: R
 }
 
 export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailProps) {
+  const unit = profile.weight_unit ?? 'lb';
   const { summary, e1rmPoints, tonnagePoints, prs, rms, recent } = useMemo(() => {
     const summary = summarize(sessions, exercise, profile);
     const series = e1rmSeries(sessions, exercise, profile);
     const prList = prHistory(sessions, exercise, profile);
     const prDates = new Set(prList.map((p) => p.date));
-    const e1rmPoints: LinePoint[] = series.map((p) => ({ t: p.t, y: p.e1rm, pr: prDates.has(p.date) }));
+    // Chart axes are drawn in the display unit (values are stored lb).
+    const e1rmPoints: LinePoint[] = series.map((p) => ({ t: p.t, y: toDisplay(p.e1rm, unit), pr: prDates.has(p.date) }));
     return {
       summary,
       e1rmPoints,
-      tonnagePoints: tonnageSeries(sessions, exercise, profile).map((p) => ({ t: p.t, y: p.tonnage })),
+      tonnagePoints: tonnageSeries(sessions, exercise, profile).map((p) => ({ t: p.t, y: toDisplay(p.tonnage, unit) })),
       prs: [...prList].reverse(), // most recent PR first
       rms: repMaxes(sessions, exercise, profile),
       recent: recentSessions(sessions, exercise, profile, 5),
     };
-  }, [sessions, exercise, profile]);
+  }, [sessions, exercise, profile, unit]);
 
   const change = summary.e1rmChange;
   const changeText =
@@ -82,11 +86,11 @@ export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailPr
       <section className="grid grid-cols-2 gap-2">
         <StatTile
           label="Est. 1RM"
-          value={summary.currentE1RM ? `${Math.round(summary.currentE1RM)} lb` : '—'}
+          value={summary.currentE1RM ? `${formatE1RM(summary.currentE1RM, unit)} ${unit}` : '—'}
           sub={<span className={changeColor}>{changeText} since start</span>}
         />
-        <StatTile label="Best e1RM" value={summary.bestE1RM ? `${Math.round(summary.bestE1RM)} lb` : '—'} />
-        <StatTile label="Total tonnage" value={`${fmtTonnage(summary.totalTonnage)} lb`} />
+        <StatTile label="Best e1RM" value={summary.bestE1RM ? `${formatE1RM(summary.bestE1RM, unit)} ${unit}` : '—'} />
+        <StatTile label="Total tonnage" value={`${fmtTonnage(toDisplay(summary.totalTonnage, unit))} ${unit}`} />
         <StatTile label="PRs" value={`${prs.length}`} />
       </section>
 
@@ -106,7 +110,7 @@ export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailPr
       {recent.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-neutral-600 dark:text-neutral-300">Last 5 sessions</h2>
-          <SessionHistory sessions={recent} />
+          <SessionHistory sessions={recent} unit={unit} />
         </section>
       )}
 
@@ -121,7 +125,7 @@ export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailPr
           <div className="flex flex-wrap gap-1.5">
             {rms.map((r) => (
               <span key={r.reps} className="rounded-lg bg-neutral-100 px-2.5 py-1 text-sm tabular-nums dark:bg-neutral-800">
-                <span className="font-bold">{r.weight_lb}</span>
+                <span className="font-bold">{formatWeight(r.weight_lb, unit)}</span>
                 <span className="text-neutral-500 dark:text-neutral-400"> × {r.reps}</span>
               </span>
             ))}
@@ -140,10 +144,10 @@ export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailPr
               >
                 <span className="flex items-center gap-2">
                   <span className="inline-block h-2 w-2 rounded-full bg-[var(--viz-good)]" aria-hidden />
-                  <span className="font-semibold tabular-nums">{Math.round(p.e1rm)} lb e1RM</span>
+                  <span className="font-semibold tabular-nums">{formatE1RM(p.e1rm, unit)} {unit} e1RM</span>
                 </span>
                 <span className="tabular-nums text-neutral-500 dark:text-neutral-400">
-                  {p.weight_lb} × {p.reps} · {fmtDate(p.date)}
+                  {formatWeight(p.weight_lb, unit)} × {p.reps} · {fmtDate(p.date)}
                 </span>
               </li>
             ))}

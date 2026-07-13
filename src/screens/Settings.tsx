@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Goal } from '../lib/types';
 import type { Profile } from '../data/domain';
+import { fromInput, roundDisplay, type PlateSystem, type WeightUnit } from '../lib/units';
 
 interface SettingsProps {
   profile: Profile;
@@ -31,25 +32,38 @@ function bucketForMonths(m: number): number {
 }
 
 export function Settings({ profile, onSave, onClose }: SettingsProps) {
-  const [bodyweight, setBodyweight] = useState(profile.bodyweight_lb);
   const [goal, setGoal] = useState<Goal>(profile.goal);
   const [trainingAge, setTrainingAge] = useState(bucketForMonths(profile.training_age_months));
   const [microPlates, setMicroPlates] = useState(profile.has_micro_plates);
   const [dumbbellIncrement, setDumbbellIncrement] = useState(profile.dumbbell_increment_lb);
   const [sessionsPerWeek, setSessionsPerWeek] = useState(profile.sessions_per_week ?? 3);
   const [warmupEnabled, setWarmupEnabled] = useState(profile.warmup_enabled);
+  const [unit, setUnit] = useState<WeightUnit>(profile.weight_unit);
+  const [plateSystem, setPlateSystem] = useState<PlateSystem>(profile.plate_system);
+  // Bodyweight is edited in the display unit; stored in lb.
+  const [bodyweightDisplay, setBodyweightDisplay] = useState(roundDisplay(profile.bodyweight_lb, profile.weight_unit));
   const [saving, setSaving] = useState(false);
+
+  // Switching to kg defaults the plate system to metric (and lb → imperial), but
+  // the two stay independent so a kg readout on imperial equipment is possible.
+  const changeUnit = (u: WeightUnit) => {
+    setBodyweightDisplay(roundDisplay(fromInput(bodyweightDisplay, unit), u));
+    setUnit(u);
+    setPlateSystem(u === 'kg' ? 'metric' : 'imperial');
+  };
 
   const save = async () => {
     setSaving(true);
     await onSave({
-      bodyweight_lb: bodyweight,
+      bodyweight_lb: fromInput(bodyweightDisplay, unit),
       goal,
       training_age_months: trainingAge,
       has_micro_plates: microPlates,
       dumbbell_increment_lb: dumbbellIncrement,
       sessions_per_week: sessionsPerWeek,
       warmup_enabled: warmupEnabled,
+      weight_unit: unit,
+      plate_system: plateSystem,
     });
     onClose();
   };
@@ -76,16 +90,56 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
         </div>
 
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-4 text-neutral-900 dark:text-neutral-50">
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-neutral-500 dark:text-neutral-400">Units</span>
+            <div className="flex gap-1.5" role="group" aria-label="Weight unit">
+              {(['lb', 'kg'] as const).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => changeUnit(u)}
+                  aria-pressed={unit === u}
+                  className={`flex-1 rounded-xl py-2 text-sm font-semibold ${
+                    unit === u ? 'bg-emerald-600 text-white' : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
+                  }`}
+                >
+                  {u === 'lb' ? 'Pounds (lb)' : 'Kilograms (kg)'}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-neutral-400">Display only — everything is stored in pounds; nothing is converted in the engine.</span>
+          </div>
+
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-neutral-500 dark:text-neutral-400">Plates</span>
+            <div className="flex gap-1.5" role="group" aria-label="Plate system">
+              {(['imperial', 'metric'] as const).map((ps) => (
+                <button
+                  key={ps}
+                  type="button"
+                  onClick={() => setPlateSystem(ps)}
+                  aria-pressed={plateSystem === ps}
+                  className={`flex-1 rounded-xl py-2 text-sm font-semibold ${
+                    plateSystem === ps ? 'bg-emerald-600 text-white' : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
+                  }`}
+                >
+                  {ps === 'imperial' ? '45 lb bar' : '20 kg bar'}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-neutral-400">Which bar + plates you actually load. Targets snap to this grid.</span>
+          </div>
+
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-500 dark:text-neutral-400">Bodyweight (lb)</span>
+            <span className="font-medium text-neutral-500 dark:text-neutral-400">Bodyweight ({unit})</span>
             <input
               type="number"
               inputMode="decimal"
-              value={bodyweight}
+              value={bodyweightDisplay}
               min={0}
               step={1}
               aria-label="Bodyweight"
-              onChange={(e) => setBodyweight(Number(e.target.value))}
+              onChange={(e) => setBodyweightDisplay(Number(e.target.value))}
               className={`${field} text-xl font-bold tabular-nums`}
             />
             <span className="text-xs text-neutral-400">Used for dips, pull-ups, and relative-strength stats.</span>

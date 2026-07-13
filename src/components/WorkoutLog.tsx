@@ -1,4 +1,5 @@
 import type { LoggedSet } from '../data/domain';
+import { formatWeight, type WeightUnit } from '../lib/units';
 
 export interface WorkoutLogEntry {
   exercise_id: string;
@@ -10,9 +11,11 @@ export interface WorkoutLogEntry {
 export function WorkoutLog({
   entries,
   currentExerciseId,
+  unit = 'lb',
 }: {
   entries: WorkoutLogEntry[];
   currentExerciseId: string;
+  unit?: WeightUnit;
 }) {
   if (entries.length === 0) return null;
   const workingSets = entries.reduce((n, e) => n + e.sets.filter((s) => !s.is_warmup).length, 0);
@@ -43,7 +46,7 @@ export function WorkoutLog({
                     className="rounded-lg bg-neutral-100 px-2 py-1 text-xs tabular-nums text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
                   >
                     {s.is_warmup && <span className="text-neutral-400">wu </span>}
-                    {s.weight_lb}×{s.reps}
+                    {formatWeight(s.weight_lb, unit)}×{s.reps}
                     {s.failed && <span className="text-amber-500"> ✕</span>}
                   </li>
                 ))}

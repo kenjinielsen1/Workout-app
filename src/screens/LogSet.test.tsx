@@ -204,6 +204,31 @@ describe('LogSet screen', () => {
     expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ is_warmup: true }));
   });
 
+  it('kg user: displays the target in kg but stores the set in lb, unchanged (UNITS.md)', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    // 225 lb ≈ 102 kg. Metric bar so the grid is kg.
+    render(
+      <LogSet
+        userId="u1"
+        exercise={barbell}
+        profile={{ ...profile, weight_unit: 'kg', plate_system: 'metric' }}
+        target={target}
+        onLogSet={onLogSet}
+      />,
+    );
+    expect(screen.getByText(/Target 102 kg × 5/)).toBeInTheDocument(); // displayed in kg
+    await user.click(screen.getByRole('button', { name: /hit target/i }));
+    // Stored value is the original lb — the engine never sees kg.
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 225 }));
+  });
+
+  it('lb user: weight readout is byte-for-byte unchanged (regression guard)', () => {
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
+    expect(screen.getByText(/Target 225 lb × 5/)).toBeInTheDocument();
+    expect(screen.getByTestId('weight-input')).toHaveValue(225);
+  });
+
   it('shows no warm-up ramp when the setting is off (default)', () => {
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
     expect(screen.queryByRole('region', { name: /warm-up sets/i })).not.toBeInTheDocument();

@@ -3,12 +3,13 @@
 // data comes from recentSessions() over the local store, so it works offline.
 
 import type { HistorySession } from '../lib/exerciseStats';
+import { formatWeight, toDisplay, type WeightUnit } from '../lib/units';
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
 /** "225 × 5, 5, 5" — group consecutive same-weight sets; "·"-join weight groups. */
-function formatSets(sets: HistorySession['sets']): string {
+function formatSets(sets: HistorySession['sets'], unit: WeightUnit): string {
   const groups: { weight: number; reps: string[] }[] = [];
   for (const s of sets) {
     const rep = s.failed ? `${s.reps}✗` : `${s.reps}`;
@@ -16,15 +17,16 @@ function formatSets(sets: HistorySession['sets']): string {
     if (last && last.weight === s.weight_lb) last.reps.push(rep);
     else groups.push({ weight: s.weight_lb, reps: [rep] });
   }
-  return groups.map((g) => `${g.weight} × ${g.reps.join(', ')}`).join(' · ');
+  return groups.map((g) => `${formatWeight(g.weight, unit)} × ${g.reps.join(', ')}`).join(' · ');
 }
 
 interface Props {
   title?: string;
   sessions: HistorySession[];
+  unit?: WeightUnit;
 }
 
-export function SessionHistory({ title, sessions }: Props) {
+export function SessionHistory({ title, sessions, unit = 'lb' }: Props) {
   if (sessions.length === 0) {
     return (
       <p className="text-sm text-neutral-500 dark:text-neutral-400">
@@ -44,12 +46,12 @@ export function SessionHistory({ title, sessions }: Props) {
             className="flex items-center justify-between gap-3 rounded-xl bg-neutral-100 px-3 py-2 text-sm dark:bg-neutral-800"
           >
             <span className="w-12 shrink-0 text-neutral-500 dark:text-neutral-400">{fmtDate(s.date)}</span>
-            <span className="flex-1 font-medium tabular-nums">{formatSets(s.sets)}</span>
+            <span className="flex-1 font-medium tabular-nums">{formatSets(s.sets, unit)}</span>
             <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">
               {s.rir != null ? `RIR ${s.rir}` : ''}
             </span>
             <span className="w-20 shrink-0 text-right tabular-nums text-neutral-500 dark:text-neutral-400">
-              {s.e1rm != null ? `→ ${s.e1rm}` : ''}
+              {s.e1rm != null ? `→ ${formatWeight(s.e1rm, unit)}` : ''}
             </span>
           </li>
         ))}

@@ -6,6 +6,16 @@ import { plateLoadout } from '../lib/plateMath';
 import { formatRest, nextSetTarget } from '../lib/liveProgression';
 import type { HistorySession } from '../lib/exerciseStats';
 import { warmupPlan } from '../lib/warmup';
+import {
+  BARBELL_KG_STEP,
+  displayStep,
+  formatE1RM,
+  formatWeightUnit,
+  fromInput,
+  toDisplay,
+  type PlateSystem,
+  type WeightUnit,
+} from '../lib/units';
 import type { Equipment, LoadType } from '../lib/types';
 import { NumberStepper } from '../components/NumberStepper';
 import { RirSlider } from '../components/RirSlider';
@@ -28,6 +38,8 @@ export interface LogSetProfile {
   has_micro_plates: boolean;
   dumbbell_increment_lb: number;
   warmup_enabled?: boolean;
+  weight_unit?: WeightUnit;
+  plate_system?: PlateSystem;
 }
 
 export interface SessionTarget {
@@ -65,23 +77,29 @@ interface LogSetProps {
 const newId = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `set-${Math.random().toString(36).slice(2)}`;
 
-function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfile): string {
+function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfile, unit: WeightUnit): string {
   const eff = effectiveLoad({ weight_lb: weight }, ex, { bodyweight_lb: profile.bodyweight_lb });
+  const w = (lb: number) => formatWeightUnit(lb, unit);
   switch (ex.load_type) {
     case 'per_hand':
-      return `${weight} lb each hand · ${eff} lb on the body`;
+      return `${w(weight)} each hand · ${w(eff)} on the body`;
     case 'per_side':
-      return `${weight} lb per side · ${eff} lb total`;
+      return `${w(weight)} per side · ${w(eff)} total`;
     case 'bodyweight_plus':
-      return `bodyweight ${profile.bodyweight_lb} + ${weight} · ${eff} lb on the body`;
+      return `bodyweight ${w(profile.bodyweight_lb)} + ${w(weight)} · ${w(eff)} on the body`;
     case 'total':
     default:
-      return `${eff} lb on the body`;
+      return `${w(eff)} on the body`;
   }
 }
 
 export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], onLogSet, onDeleteSet }: LogSetProps) {
+  const unit = profile.weight_unit ?? 'lb';
+  const isMetricBar = (profile.plate_system ?? 'imperial') === 'metric' && exercise.equipment === 'barbell';
   const weightStep = equipmentIncrement(exercise, profile);
+  // Stepper increment in the display unit: 0.5 kg on a metric bar, else the
+  // equipment increment converted.
+  const displayWeightStep = isMetricBar ? BARBELL_KG_STEP : displayStep(weightStep, unit);
   const [weight, setWeight] = useState(target.target_weight_lb);
   const [reps, setReps] = useState(target.target_reps);
   const [rir, setRir] = useState(2);
@@ -106,9 +124,11 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     if (sets.length === 0) bestE1RMRef.current = priorBestE1RM;
   }, [priorBestE1RM, sets.length]);
 
+  // Imperial plate chips only; a metric bar shows the converted effective-load
+  // note instead (imperial plate denominations don't apply at a metric gym).
   const plates = useMemo(
-    () => plateLoadout(weight, exercise, profile),
-    [weight, exercise, profile],
+    () => (isMetricBar ? null : plateLoadout(weight, exercise, profile)),
+    [weight, exercise, profile, isMetricBar],
   );
   const workingCount = sets.filter((s) => !s.is_warmup).length;
 
@@ -140,7 +160,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     if (e !== null && e > bestE1RMRef.current + 1e-9) {
       is_pr = true;
       bestE1RMRef.current = e;
-      setPrCelebration(Math.round(e));
+      setPrCelebration(e); // lb e1RM; formatted to the display unit at render
     } else if (!s.is_warmup) {
       setPrCelebration(null); // a normal working set clears a stale celebration
     }
@@ -196,7 +216,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
         <h1 className="text-2xl font-bold">{exercise.name}</h1>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="rounded-full bg-emerald-600 px-3 py-1 font-semibold text-white">
-            Target {target.target_weight_lb} lb × {target.target_reps}
+            Target {formatWeightUnit(target.target_weight_lb, unit)} × {target.target_reps}
           </span>
           <span className="text-neutral-500 dark:text-neutral-400">
             set {Math.min(workingCount + 1, target.target_sets)} of {target.target_sets}
@@ -220,7 +240,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
       </header>
 
       {showHistory && history.length > 0 && (
-        <SessionHistory title={`Last ${history.length} — ${exercise.name}`} sessions={history} />
+        <SessionHistory title={`Last ${history.length} — ${exercise.name}`} sessions={history} unit={unit} />
       )}
 
       {warmups.length > 0 && (
@@ -245,7 +265,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
                     }`}
                   >
                     <span className="font-medium tabular-nums">
-                      {w.weight_lb} lb × {w.reps}
+                      {formatWeightUnit(w.weight_lb, unit)} × {w.reps}
                     </span>
                     <span className="text-xs">{done ? 'logged' : 'tap to log'}</span>
                   </button>
@@ -262,7 +282,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
           className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-white"
         >
           <span className="text-lg" aria-hidden>🎉</span>
-          <span className="text-sm font-bold">New PR — {prCelebration} lb estimated 1RM!</span>
+          <span className="text-sm font-bold">New PR — {formatE1RM(prCelebration, unit)} {unit} estimated 1RM!</span>
         </div>
       )}
 
@@ -305,14 +325,14 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
 
       <NumberStepper
         label="Weight"
-        value={weight}
-        onChange={setWeight}
-        step={weightStep}
-        unit="lb"
+        value={Number(toDisplay(weight, unit).toFixed(2))}
+        onChange={(dv) => setWeight(fromInput(dv, unit))}
+        step={displayWeightStep}
+        unit={unit}
         data-testid="weight-input"
       />
 
-      <PlateChips result={plates} effectiveNote={effectiveNote(weight, exercise, profile)} />
+      <PlateChips result={plates} effectiveNote={effectiveNote(weight, exercise, profile, unit)} />
 
       <NumberStepper
         label="Reps"
@@ -381,7 +401,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
                 </span>
                 <div className="flex items-center gap-3">
                   <span className="tabular-nums">
-                    {s.weight_lb} lb × {s.reps}
+                    {formatWeightUnit(s.weight_lb, unit)} × {s.reps}
                     {s.failed ? (
                       <span className="ml-2 text-amber-600 dark:text-amber-400">missed</span>
                     ) : (
