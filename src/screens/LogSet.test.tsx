@@ -185,6 +185,30 @@ describe('LogSet screen', () => {
     expect(screen.getByText('225 × 5')).toBeInTheDocument(); // one tap → visible
   });
 
+  it('renders a warm-up ramp when enabled, and logs a warm-up set on tap', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <LogSet
+        userId="u1"
+        exercise={barbell}
+        profile={{ ...profile, warmup_enabled: true }}
+        target={target}
+        onLogSet={onLogSet}
+      />,
+    );
+    const warmupRegion = screen.getByRole('region', { name: /warm-up sets/i });
+    const rows = within(warmupRegion).getAllByRole('button');
+    expect(rows.length).toBeGreaterThan(0);
+    await user.click(rows[0]!);
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ is_warmup: true }));
+  });
+
+  it('shows no warm-up ramp when the setting is off (default)', () => {
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
+    expect(screen.queryByRole('region', { name: /warm-up sets/i })).not.toBeInTheDocument();
+  });
+
   it('shows the effective-load note for dumbbells instead of plate chips', () => {
     render(
       <LogSet

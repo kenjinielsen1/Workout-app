@@ -63,6 +63,7 @@ export interface ProfileRow {
   dumbbell_increment_lb: number;
   rir_calibration_offset: number | null;
   ml_alpha_cap: number | null;
+  warmup_enabled: boolean | null;
 }
 
 /** Profile defaults for a brand-new user (no row yet, or nullable columns). */
@@ -75,4 +76,5 @@ export const PROFILE_DEFAULTS = {
   dumbbell_increment_lb: 5,
   rir_calibration_offset: 0,
   ml_alpha_cap: 1,
+  warmup_enabled: false,
 };

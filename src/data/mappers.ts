@@ -36,6 +36,7 @@ export function rowToProfile(r: ProfileRow): Profile {
     dumbbell_increment_lb: Number(r.dumbbell_increment_lb ?? PROFILE_DEFAULTS.dumbbell_increment_lb),
     rir_calibration_offset: Number(r.rir_calibration_offset ?? PROFILE_DEFAULTS.rir_calibration_offset),
     ml_alpha_cap: Number(r.ml_alpha_cap ?? PROFILE_DEFAULTS.ml_alpha_cap),
+    warmup_enabled: r.warmup_enabled ?? PROFILE_DEFAULTS.warmup_enabled,
   };
 }
 

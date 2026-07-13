@@ -5,6 +5,7 @@ import { equipmentIncrement } from '../lib/rounding';
 import { plateLoadout } from '../lib/plateMath';
 import { formatRest, nextSetTarget } from '../lib/liveProgression';
 import type { HistorySession } from '../lib/exerciseStats';
+import { warmupPlan } from '../lib/warmup';
 import type { Equipment, LoadType } from '../lib/types';
 import { NumberStepper } from '../components/NumberStepper';
 import { RirSlider } from '../components/RirSlider';
@@ -24,6 +25,7 @@ export interface LogSetProfile {
   bodyweight_lb: number;
   has_micro_plates: boolean;
   dumbbell_increment_lb: number;
+  warmup_enabled?: boolean;
 }
 
 export interface SessionTarget {
@@ -86,6 +88,14 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   const [nextNote, setNextNote] = useState<string | null>(null);
   const [prCelebration, setPrCelebration] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [warmupsDone, setWarmupsDone] = useState<Set<number>>(new Set());
+
+  // Opt-in warm-up ramp up to the working weight (FEATURES.md #1). Logged as
+  // is_warmup so they never touch e1RM / progression.
+  const warmups = useMemo(
+    () => warmupPlan(target.target_weight_lb, exercise, profile, profile.warmup_enabled ?? false),
+    [target.target_weight_lb, exercise, profile],
+  );
 
   // Live PR detection: baseline = historical best, then the running best of this
   // session's working sets. Snapshot stays synced until the first set is logged.
@@ -173,6 +183,11 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     commit({ weight_lb: weight, reps, rir: 0, is_warmup: isWarmup, failed: true });
   };
 
+  const logWarmup = (i: number, w: { weight_lb: number; reps: number }) => {
+    commit({ weight_lb: w.weight_lb, reps: w.reps, rir: 4, is_warmup: true, failed: false });
+    setWarmupsDone((prev) => new Set(prev).add(i));
+  };
+
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col gap-5 px-4 py-6 text-neutral-900 dark:text-neutral-50">
       <header className="flex flex-col gap-1">
@@ -204,6 +219,39 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
 
       {showHistory && history.length > 0 && (
         <SessionHistory title={`Last ${history.length} — ${exercise.name}`} sessions={history} />
+      )}
+
+      {warmups.length > 0 && (
+        <section aria-label="Warm-up sets" className="flex flex-col gap-1.5">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+            Warm-up
+          </h2>
+          <ul className="flex flex-col gap-1.5">
+            {warmups.map((w, i) => {
+              const done = warmupsDone.has(i);
+              return (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => logWarmup(i, w)}
+                    disabled={done}
+                    aria-label={`Log warm-up ${w.weight_lb} by ${w.reps}`}
+                    className={`flex w-full items-center justify-between rounded-xl border border-dashed px-3 py-2 text-sm ${
+                      done
+                        ? 'border-transparent bg-neutral-100 text-neutral-400 line-through dark:bg-neutral-800'
+                        : 'border-amber-300 text-neutral-700 active:scale-[0.99] dark:border-amber-700/50 dark:text-neutral-200'
+                    }`}
+                  >
+                    <span className="font-medium tabular-nums">
+                      {w.weight_lb} lb × {w.reps}
+                    </span>
+                    <span className="text-xs">{done ? 'logged' : 'tap to log'}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       {prCelebration !== null && (

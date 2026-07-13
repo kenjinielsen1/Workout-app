@@ -46,6 +46,8 @@ export interface Profile {
   rir_calibration_offset: number;
   /** Per-user ML blend cap set by the nightly job: 1 = ML allowed, 0 = rules only. */
   ml_alpha_cap: number;
+  /** Opt-in prescribed warm-up ramp (FEATURES.md #1). Off by default. */
+  warmup_enabled: boolean;
 }
 
 export interface Workout {

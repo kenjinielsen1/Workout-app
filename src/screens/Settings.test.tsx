@@ -15,6 +15,7 @@ const profile: Profile = {
   dumbbell_increment_lb: 5,
   rir_calibration_offset: 0,
   ml_alpha_cap: 1,
+  warmup_enabled: false,
 };
 
 function setup() {

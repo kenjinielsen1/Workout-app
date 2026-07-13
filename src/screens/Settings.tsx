@@ -37,6 +37,7 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
   const [microPlates, setMicroPlates] = useState(profile.has_micro_plates);
   const [dumbbellIncrement, setDumbbellIncrement] = useState(profile.dumbbell_increment_lb);
   const [sessionsPerWeek, setSessionsPerWeek] = useState(profile.sessions_per_week ?? 3);
+  const [warmupEnabled, setWarmupEnabled] = useState(profile.warmup_enabled);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -48,6 +49,7 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
       has_micro_plates: microPlates,
       dumbbell_increment_lb: dumbbellIncrement,
       sessions_per_week: sessionsPerWeek,
+      warmup_enabled: warmupEnabled,
     });
     onClose();
   };
@@ -133,6 +135,20 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
               checked={microPlates}
               aria-label="Micro plates available"
               onChange={(e) => setMicroPlates(e.target.checked)}
+              className="h-6 w-6 rounded accent-emerald-600"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span className="flex flex-col">
+              <span className="font-medium">Prescribe warm-up sets</span>
+              <span className="text-xs text-neutral-400">Shows a ramp up to your working weight, marked as warm-ups.</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={warmupEnabled}
+              aria-label="Prescribe warm-up sets"
+              onChange={(e) => setWarmupEnabled(e.target.checked)}
               className="h-6 w-6 rounded accent-emerald-600"
             />
           </label>
