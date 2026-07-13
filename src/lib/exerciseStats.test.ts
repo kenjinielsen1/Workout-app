@@ -2,15 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
   bestSetE1RM,
   e1rmSeries,
+  isE1RMPr,
   prHistory,
   repMaxes,
   sessionTonnage,
+  setE1RM,
   summarize,
   tonnageSeries,
   type StatExercise,
   type StatProfile,
   type StatSession,
 } from './exerciseStats';
+import { adjustedE1RM, e1RM, effectiveLoad } from './effectiveLoad';
 
 const barbell: StatExercise = { load_type: 'total' };
 const dumbbell: StatExercise = { load_type: 'per_hand' };
@@ -126,5 +129,42 @@ describe('summarize', () => {
       totalTonnage: 0,
       lastPerformed: null,
     });
+  });
+});
+
+// --- FEATURES.md #4: e1RM as a first-class number + PR flagging -------------
+describe('setE1RM / isE1RMPr (live PR flagging)', () => {
+  it('setE1RM is Epley on the effective load; null for warmup / failed / 0 reps', () => {
+    expect(setE1RM({ weight_lb: 200, reps: 5 }, barbell, user)).toBeCloseTo(200 * (1 + 5 / 30), 6);
+    // per-hand doubles the effective load
+    expect(setE1RM({ weight_lb: 50, reps: 5 }, dumbbell, user)).toBeCloseTo(100 * (1 + 5 / 30), 6);
+    expect(setE1RM({ weight_lb: 200, reps: 5, is_warmup: true }, barbell, user)).toBeNull();
+    expect(setE1RM({ weight_lb: 200, reps: 5, failed: true }, barbell, user)).toBeNull();
+    expect(setE1RM({ weight_lb: 200, reps: 0 }, barbell, user)).toBeNull();
+  });
+
+  it('flags a set that beats the historical best exactly once', () => {
+    const prior = e1RM(200, 5); // 233.3
+    // A heavier top set beats it → PR.
+    expect(isE1RMPr({ weight_lb: 210, reps: 5 }, prior, barbell, user)).toBe(true);
+    // Once the best is updated, a matching-or-lower set is no longer a PR.
+    const newBest = setE1RM({ weight_lb: 210, reps: 5 }, barbell, user)!;
+    expect(isE1RMPr({ weight_lb: 205, reps: 5 }, newBest, barbell, user)).toBe(false);
+    expect(isE1RMPr({ weight_lb: 210, reps: 5 }, newBest, barbell, user)).toBe(false); // equal, not a PR
+  });
+
+  it('never flags a warm-up or failed set as a PR', () => {
+    const low = 100;
+    expect(isE1RMPr({ weight_lb: 500, reps: 5, is_warmup: true }, low, barbell, user)).toBe(false);
+    expect(isE1RMPr({ weight_lb: 500, reps: 5, failed: true }, low, barbell, user)).toBe(false);
+  });
+
+  it('displays Epley, while the engine uses the RIR-adjusted value internally', () => {
+    const set = { weight_lb: 200, reps: 5, rir: 1 as number | null };
+    const displayed = setE1RM(set, barbell, user)!; // Epley, RIR-independent
+    expect(displayed).toBeCloseTo(e1RM(effectiveLoad(set, barbell, user), 5), 6);
+    // The adjusted (internal) figure folds in reps-in-reserve and differs.
+    const adjusted = adjustedE1RM(effectiveLoad(set, barbell, user), 5, 1);
+    expect(adjusted).not.toBeCloseTo(displayed, 2);
   });
 });

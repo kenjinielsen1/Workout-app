@@ -6,7 +6,7 @@ import { deriveInitialTarget, type SessionTarget } from '../lib/target';
 import { exerciseFeatures, recommendTarget, sessionsForExercise } from '../lib/recommend';
 import { isMLConfigured, predict } from '../lib/mlClient';
 import type { FinalTarget, MLPrediction } from '../lib/blend';
-import { bestSetE1RM } from '../lib/exerciseStats';
+import { bestSetE1RM, summarize } from '../lib/exerciseStats';
 import { dailyReadiness, type DailyCheckin } from '../lib/progression';
 import { formatDuration } from '../lib/liveProgression';
 import { LogSet, type LoggedSet } from './LogSet';
@@ -302,6 +302,15 @@ export function Home() {
   const selected = exercises.find((e) => e.id === selectedId);
   const detailSessions = allSessions.filter((s) => s.exercise_id === selectedId);
 
+  // Historical best e1RM for the selected lift, for live PR flagging (FEATURES.md #4).
+  const priorBestE1RM = useMemo(() => {
+    if (!selected || !profile) return 0;
+    return (
+      summarize(detailSessions, { load_type: selected.load_type }, { bodyweight_lb: profile.bodyweight_lb })
+        .bestE1RM ?? 0
+    );
+  }, [detailSessions, selected, profile]);
+
   // Everything logged since the workout clock started, grouped by movement — a
   // running log across all exercises in this session (survives switching lifts).
   const workoutLog = useMemo<WorkoutLogEntry[]>(() => {
@@ -391,6 +400,7 @@ export function Home() {
             exercise={selected}
             profile={profile}
             target={target}
+            priorBestE1RM={priorBestE1RM}
             onLogSet={onLogSet}
             onDeleteSet={onDeleteSet}
           />

@@ -72,6 +72,26 @@ export function bestSetE1RM(
   return best;
 }
 
+/** Epley e1RM for a single COUNTABLE set (working, not failed, reps > 0), else
+ *  null. This is the displayed number — the engine uses the RIR-adjusted value
+ *  internally (FEATURES.md #4). */
+export function setE1RM(set: StatSet, ex: StatExercise, user: StatProfile): number | null {
+  if (set.is_warmup || set.failed || set.reps <= 0) return null;
+  return e1RM(effectiveLoad(set, ex, user), set.reps);
+}
+
+/** True when `set` sets a new e1RM PR versus `priorBest`. Warm-ups and failed
+ *  sets never count (FEATURES.md #4). */
+export function isE1RMPr(
+  set: StatSet,
+  priorBest: number,
+  ex: StatExercise,
+  user: StatProfile,
+): boolean {
+  const v = setE1RM(set, ex, user);
+  return v !== null && v > priorBest + 1e-9;
+}
+
 /** Total effective tonnage (Σ load × reps) across a session's working sets. */
 export function sessionTonnage(session: StatSession, ex: StatExercise, user: StatProfile): number {
   return working(session).reduce((sum, set) => sum + effectiveLoad(set, ex, user) * set.reps, 0);

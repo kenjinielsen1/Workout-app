@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { effectiveLoad } from '../lib/effectiveLoad';
+import { setE1RM } from '../lib/exerciseStats';
 import { equipmentIncrement } from '../lib/rounding';
 import { plateLoadout } from '../lib/plateMath';
 import { formatRest, nextSetTarget } from '../lib/liveProgression';
@@ -38,6 +39,8 @@ export interface LoggedSet {
   rir: number;
   is_warmup: boolean;
   failed: boolean;
+  /** Set a new e1RM personal record this session (FEATURES.md #4). Display-only. */
+  is_pr?: boolean;
 }
 
 interface LogSetProps {
@@ -45,6 +48,8 @@ interface LogSetProps {
   exercise: LogSetExercise;
   profile: LogSetProfile;
   target: SessionTarget;
+  /** Historical best e1RM for this lift, for live PR detection (FEATURES.md #4). */
+  priorBestE1RM?: number;
   onLogSet?: (set: LoggedSet) => void;
   onDeleteSet?: (id: string) => void;
 }
@@ -67,7 +72,7 @@ function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfil
   }
 }
 
-export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSet }: LogSetProps) {
+export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, onLogSet, onDeleteSet }: LogSetProps) {
   const weightStep = equipmentIncrement(exercise, profile);
   const [weight, setWeight] = useState(target.target_weight_lb);
   const [reps, setReps] = useState(target.target_reps);
@@ -75,6 +80,14 @@ export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSe
   const [isWarmup, setIsWarmup] = useState(false);
   const [sets, setSets] = useState<LoggedSet[]>([]);
   const [nextNote, setNextNote] = useState<string | null>(null);
+  const [prCelebration, setPrCelebration] = useState<number | null>(null);
+
+  // Live PR detection: baseline = historical best, then the running best of this
+  // session's working sets. Snapshot stays synced until the first set is logged.
+  const bestE1RMRef = useRef(priorBestE1RM);
+  useEffect(() => {
+    if (sets.length === 0) bestE1RMRef.current = priorBestE1RM;
+  }, [priorBestE1RM, sets.length]);
 
   const plates = useMemo(
     () => plateLoadout(weight, exercise, profile),
@@ -104,7 +117,18 @@ export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSe
   };
 
   const commit = (s: Omit<LoggedSet, 'set_number' | 'id'>) => {
-    const logged: LoggedSet = { ...s, id: newId(), set_number: sets.length + 1 };
+    // e1RM PR: a countable set that beats the running best. Fire once per new best.
+    let is_pr = false;
+    const e = setE1RM({ weight_lb: s.weight_lb, reps: s.reps, is_warmup: s.is_warmup, failed: s.failed }, exercise, profile);
+    if (e !== null && e > bestE1RMRef.current + 1e-9) {
+      is_pr = true;
+      bestE1RMRef.current = e;
+      setPrCelebration(Math.round(e));
+    } else if (!s.is_warmup) {
+      setPrCelebration(null); // a normal working set clears a stale celebration
+    }
+
+    const logged: LoggedSet = { ...s, id: newId(), set_number: sets.length + 1, is_pr };
     setSets((prev) => [...prev, logged]);
     onLogSet?.(logged);
 
@@ -162,6 +186,16 @@ export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSe
           </p>
         )}
       </header>
+
+      {prCelebration !== null && (
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-white"
+        >
+          <span className="text-lg" aria-hidden>🎉</span>
+          <span className="text-sm font-bold">New PR — {prCelebration} lb estimated 1RM!</span>
+        </div>
+      )}
 
       {nextNote && (
         <div className="flex items-center justify-between gap-3 rounded-2xl bg-neutral-100 px-4 py-3 dark:bg-neutral-800">
@@ -268,8 +302,13 @@ export function LogSet({ userId, exercise, profile, target, onLogSet, onDeleteSe
                 key={s.id}
                 className="flex items-center justify-between gap-2 rounded-xl bg-neutral-100 px-3 py-2 text-sm dark:bg-neutral-800"
               >
-                <span className="font-medium">
+                <span className="flex items-center gap-1.5 font-medium">
                   {s.is_warmup ? 'Warm-up' : `Set ${s.set_number}`}
+                  {s.is_pr && (
+                    <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                      PR
+                    </span>
+                  )}
                 </span>
                 <div className="flex items-center gap-3">
                   <span className="tabular-nums">

@@ -151,6 +151,23 @@ describe('LogSet screen', () => {
     expect(screen.getByTestId('weight-input')).toHaveValue(227.5);
   });
 
+  it('flags a set that beats the prior best e1RM as a PR (banner + badge)', async () => {
+    const user = userEvent.setup();
+    // 225×5 → e1RM 262.5, beats a prior best of 250.
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} priorBestE1RM={250} />);
+    await user.click(screen.getByRole('button', { name: /hit target/i }));
+    expect(screen.getByRole('status')).toHaveTextContent(/New PR/i);
+    expect(within(screen.getByRole('list')).getByText('PR')).toBeInTheDocument();
+  });
+
+  it('does not flag a set below the prior best e1RM', async () => {
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} priorBestE1RM={1000} />);
+    await user.click(screen.getByRole('button', { name: /hit target/i }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText('PR')).not.toBeInTheDocument();
+  });
+
   it('shows the effective-load note for dumbbells instead of plate chips', () => {
     render(
       <LogSet
