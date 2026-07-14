@@ -73,9 +73,10 @@ describe('no research-derived numeric literal remains in engine code (grep guard
 describe('per-user calibration offsets are deltas FROM the config priors', () => {
   const base: ProgProfile = { bodyweight_lb: 180, has_micro_plates: true, dumbbell_increment_lb: 5, goal: 'hypertrophy', training_age_months: 36 };
 
-  it('a RIR offset shifts the corrected value by exactly the offset, whatever the prior', () => {
-    const withOffset = correctedRIR(2, { ...base, rir_calibration_offset: 1.5 }, 8);
-    const noOffset = correctedRIR(2, { ...base, rir_calibration_offset: 0 }, 8);
+  it('a trusted RIR offset shifts the corrected value by exactly the offset, whatever the prior', () => {
+    const trusted = { rir_calibration_n: 4 }; // ≥ trust threshold so the offset applies
+    const withOffset = correctedRIR(2, { ...base, ...trusted, rir_calibration_offset: 1.5 }, 8);
+    const noOffset = correctedRIR(2, { ...base, ...trusted, rir_calibration_offset: 0 }, 8);
     expect(noOffset - withOffset).toBeCloseTo(1.5, 9); // offset is a pure delta → survives a prior bump
   });
 
