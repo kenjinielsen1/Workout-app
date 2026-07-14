@@ -565,6 +565,34 @@ describe('per-machine increments (INCREMENTS.md)', () => {
   });
 });
 
+// --- PROGRAMMING.md Part A: planned periodization ----------------------------
+describe('planned deload week (PROGRAMMING.md Part A)', () => {
+  it('a planned deload suppresses a load increase even with high readiness', () => {
+    const ready = recommendProgression(increaseCtx());
+    expect(ready.action).toBe('increase_load'); // would increase without periodization
+
+    const deload = recommendProgression(increaseCtx({ plannedDeload: true }));
+    expect(deload.action).toBe('deload');
+    expect(deload.target_weight_lb).toBeLessThan(ready.target_weight_lb);
+    expect(deload.rationale).toMatch(/planned deload/i);
+  });
+
+  it('periodization off (no plannedDeload flag) behaves exactly as before', () => {
+    const off = recommendProgression(increaseCtx());
+    const explicitFalse = recommendProgression(increaseCtx({ plannedDeload: false }));
+    expect(off.action).toBe('increase_load');
+    expect(explicitFalse.action).toBe('increase_load');
+    expect(off.target_weight_lb).toBe(explicitFalse.target_weight_lb);
+  });
+
+  it('a pain veto still wins over a planned deload (safety first)', () => {
+    const hist = risingHistory([100, 105, 110, 115], 10, 4, 10, [8, 7.5, 7, 6.5]);
+    hist[hist.length - 1]!.pain_note = true;
+    const r = recommendProgression(increaseCtx({ history: hist, plannedDeload: true }));
+    expect(r.action).toBe('freeze');
+  });
+});
+
 // --- guards -----------------------------------------------------------------
 describe('guards', () => {
   it('throws on empty history', () => {

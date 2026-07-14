@@ -65,6 +65,8 @@ export interface Profile {
   /** Display unit + loadable-plate system (UNITS.md). Storage is always lb. */
   weight_unit: WeightUnit;
   plate_system: PlateSystem;
+  /** Proactive periodization on/off (PROGRAMMING.md Part A). */
+  periodization_enabled: boolean;
 }
 
 export interface Workout {

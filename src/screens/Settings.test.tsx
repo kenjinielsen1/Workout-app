@@ -18,6 +18,7 @@ const profile: Profile = {
   warmup_enabled: false,
   weight_unit: 'lb',
   plate_system: 'imperial',
+  periodization_enabled: true,
 };
 
 function setup() {

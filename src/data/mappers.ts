@@ -41,6 +41,7 @@ export function rowToProfile(r: ProfileRow): Profile {
     warmup_enabled: r.warmup_enabled ?? PROFILE_DEFAULTS.warmup_enabled,
     weight_unit: r.weight_unit ?? PROFILE_DEFAULTS.weight_unit,
     plate_system: r.plate_system ?? PROFILE_DEFAULTS.plate_system,
+    periodization_enabled: r.periodization_enabled ?? PROFILE_DEFAULTS.periodization_enabled,
   };
 }
 

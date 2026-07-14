@@ -12,6 +12,8 @@ import { equipmentIncrement, snapToLoadable } from '../lib/rounding';
 import { variantsOf } from '../lib/variants';
 import { weeklyHardSets, weekStartOf, volumeState } from '../lib/volume';
 import { landmarksFor } from '../lib/volumeLandmarks';
+import { blockPosition, isPlannedDeloadWeek, phaseIntent } from '../lib/periodization';
+import { activeObservations, balanceObservations, patternVolume, type DismissedFlag } from '../lib/balance';
 import { formatDuration } from '../lib/liveProgression';
 import { LogSet, type LoggedSet } from './LogSet';
 import { ExerciseDetail } from './ExerciseDetail';
@@ -20,6 +22,7 @@ import { WorkoutLog, type WorkoutLogEntry } from '../components/WorkoutLog';
 import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCheckIn';
 import { PlateauCard } from '../components/PlateauCard';
 import { IncrementPrompt } from '../components/IncrementPrompt';
+import { BalanceCard } from '../components/BalanceCard';
 import type { VolumeRow } from '../components/VolumeView';
 import type { PlateauChoice } from '../data/domain';
 import { Settings } from './Settings';
@@ -184,14 +187,19 @@ export function Home() {
       workoutId.current = null;
       setCounter.current = 0;
 
+      // PROGRAMMING.md Part A: is this a planned deload week? Block anchored to the
+      // user's first logged session; disabled → always false.
+      const anchor = all.length ? all.reduce((m, s) => (s.performed_at < m ? s.performed_at : m), all[0]!.performed_at) : null;
+      const plannedDeload = isPlannedDeloadWeek(anchor, new Date().toISOString(), p.periodization_enabled);
+
       // OFFLINE-FIRST live path: the shown number is pure local TS, no network.
       // Prefer a target precomputed at the last session's finish — but only when
-      // there's no check-in to fold in (the precompute predates today's readiness).
+      // nothing this week changes it (today's check-in, or a planned deload).
       const precomputed = (await store.getNextSession(userId, exId)) as FinalTarget | null;
       const fresh =
-        readinessValue === 0 && precomputed
+        readinessValue === 0 && !plannedDeload && precomputed
           ? precomputed
-          : recommendTarget(all, ex, index, p, null, p.ml_alpha_cap, readinessValue);
+          : recommendTarget(all, ex, index, p, null, p.ml_alpha_cap, readinessValue, plannedDeload);
       const shown = fresh ?? deriveInitialTarget(all.filter((s) => s.exercise_id === exId), ex, p.goal);
       setTarget(shown);
 
@@ -219,7 +227,7 @@ export function Home() {
         const feats = exerciseFeatures(all, ex, index, p);
         void predict(feats, all.length, sessionsForExercise(all, exId)).then((ml) => {
           if (!ml || workoutId.current !== null) return;
-          const refined = recommendTarget(all, ex, index, p, ml, p.ml_alpha_cap, readinessValue);
+          const refined = recommendTarget(all, ex, index, p, ml, p.ml_alpha_cap, readinessValue, plannedDeload);
           if (refined) setTarget(refined);
         });
       }
@@ -394,6 +402,46 @@ export function Home() {
     }));
   }, [allSessions, index, selected, profile]);
 
+  // PROGRAMMING.md Part A: current block phase, for the header chip. Anchored to
+  // the user's first logged session; null when disabled or no history.
+  const blockPhase = useMemo(() => {
+    if (!profile?.periodization_enabled || allSessions.length === 0) return null;
+    const anchor = allSessions.reduce((m, s) => (s.performed_at < m ? s.performed_at : m), allSessions[0]!.performed_at);
+    const pos = blockPosition(anchor, new Date().toISOString());
+    return { ...pos, deload: isPlannedDeloadWeek(anchor, new Date().toISOString(), true), label: phaseIntent(pos.phase).label };
+  }, [profile?.periodization_enabled, allSessions]);
+
+  // PROGRAMMING.md Part B — movement-pattern balance (a distribution view of the
+  // same hard-set volume). One dismissible observation per window; "intentional"
+  // dismissals persist locally and re-surface only if the imbalance worsens.
+  const [balanceDismissals, setBalanceDismissals] = useState<Record<string, DismissedFlag>>({});
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`po:balanceDismiss:${userId}`);
+      if (raw) setBalanceDismissals(JSON.parse(raw) as Record<string, DismissedFlag>);
+    } catch {
+      /* ignore corrupt entry */
+    }
+  }, [userId]);
+
+  const balanceObs = useMemo(() => {
+    if (!profile || allSessions.length === 0) return null;
+    const catalog = resolvedExercises.map((e) => ({ id: e.id, name: e.name, movement_pattern: e.movement_pattern }));
+    const pv = patternVolume(allSessions, index, profile, profile.goal, new Date().toISOString());
+    return activeObservations(balanceObservations(pv, catalog), balanceDismissals)[0] ?? null;
+  }, [allSessions, index, resolvedExercises, profile, balanceDismissals]);
+
+  const dismissBalance = useCallback(
+    (key: string, severity: number) => {
+      setBalanceDismissals((prev) => {
+        const next = { ...prev, [key]: { severity } };
+        localStorage.setItem(`po:balanceDismiss:${userId}`, JSON.stringify(next));
+        return next;
+      });
+    },
+    [userId],
+  );
+
   // Hypertrophy under-volume signal for the plateau breaker: a stall at adequate
   // load may be an under-volume problem — suggest adding a set before deloading.
   const underVolume = useMemo(() => {
@@ -481,6 +529,19 @@ export function Home() {
             <span aria-hidden className="text-neutral-400">▾</span>
           </button>
           <div className="flex items-center gap-3 text-xs text-neutral-500 dark:text-neutral-400">
+            {blockPhase && (
+              <span
+                aria-label="Training phase"
+                className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold sm:inline ${
+                  blockPhase.deload
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                    : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
+                }`}
+                title={blockPhase.label}
+              >
+                {blockPhase.phase === 'deload' ? 'Deload wk' : blockPhase.phase === 'intensification' ? 'Intensify' : 'Build'} · wk {blockPhase.weekInBlock}
+              </span>
+            )}
             <button type="button" onClick={() => setSettingsOpen(true)} className="font-semibold hover:underline">
               ⚙ Settings
             </button>
@@ -559,7 +620,21 @@ export function Home() {
           </div>
         </div>
       ) : (
-        <ExerciseDetail exercise={selected} profile={profile} sessions={detailSessions} volumeRows={volumeRows} />
+        <div className="flex flex-col">
+          {balanceObs && (
+            <div className="px-4 pt-3">
+              <BalanceCard
+                observation={balanceObs}
+                onAddSuggestion={(id) => {
+                  setSelectedId(id);
+                  setTab('log');
+                }}
+                onDismissIntentional={() => dismissBalance(balanceObs.key, balanceObs.severity)}
+              />
+            </div>
+          )}
+          <ExerciseDetail exercise={selected} profile={profile} sessions={detailSessions} volumeRows={volumeRows} />
+        </div>
       )}
 
       {pickerOpen && (

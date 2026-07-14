@@ -97,6 +97,9 @@ export interface ProgContext {
   /** Today's daily-readiness modifier in [-1,1] from the session check-in
    *  (FEATURES.md #2). null/undefined = skipped → S6 neutral, no effect. */
   dailyReadiness?: number | null;
+  /** This week is a PLANNED deload (PROGRAMMING.md Part A). Suppresses all load
+   *  increases regardless of readiness — the scheduled deload holds. */
+  plannedDeload?: boolean;
 }
 
 // --- output -----------------------------------------------------------------
@@ -430,7 +433,7 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
     plateau,
   });
 
-  // Veto #7 — pain/injury freezes progression outright.
+  // Veto #7 — pain/injury freezes progression outright (wins over everything).
   if (last.pain_note) {
     vetoes.push('pain/injury note logged');
     return build(
@@ -439,6 +442,21 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
       targetReps,
       sets,
       `${label}freeze at ${baseWeight} lb × ${targetReps} — progression paused pending review.`,
+    );
+  }
+
+  // PROGRAMMING.md Part A — a PLANNED deload week holds regardless of readiness.
+  // This is the one place a great-feeling day still backs off, on purpose.
+  if (ctx.plannedDeload) {
+    let w = snapToLoadable(baseWeight * DELOAD_FACTOR, ex, user, 'floor');
+    if (w >= baseWeight) w = snapToLoadable(baseWeight - equipmentIncrement(ex, user), ex, user, 'floor');
+    return build(
+      'deload',
+      w,
+      range.min,
+      sets,
+      `${label}Planned deload: ${baseWeight} → ${w} lb × ${range.min}. A scheduled recovery week — ` +
+        `it holds no matter how good today feels. This is how you stall less, not a setback.`,
     );
   }
 

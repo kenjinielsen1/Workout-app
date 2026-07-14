@@ -45,6 +45,7 @@ export function buildProgContext(
   profile: ProgProfile,
   refT?: number,
   dailyReadinessValue: number | null = null,
+  plannedDeload = false,
 ): ProgContext {
   const exerciseSessions = allSessions
     .filter((s) => s.exercise_id === ex.id)
@@ -83,6 +84,7 @@ export function buildProgContext(
     sessionsSinceLastDeload: sessionsSinceLastDeload(metrics.map((m) => m.topWeight)),
     previousWasFlagged: false,
     dailyReadiness: dailyReadinessValue,
+    plannedDeload,
   };
 }
 

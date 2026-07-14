@@ -38,6 +38,7 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
   const [dumbbellIncrement, setDumbbellIncrement] = useState(profile.dumbbell_increment_lb);
   const [sessionsPerWeek, setSessionsPerWeek] = useState(profile.sessions_per_week ?? 3);
   const [warmupEnabled, setWarmupEnabled] = useState(profile.warmup_enabled);
+  const [periodizationEnabled, setPeriodizationEnabled] = useState(profile.periodization_enabled);
   const [unit, setUnit] = useState<WeightUnit>(profile.weight_unit);
   const [plateSystem, setPlateSystem] = useState<PlateSystem>(profile.plate_system);
   // Bodyweight is edited in the display unit; stored in lb.
@@ -64,6 +65,7 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
       warmup_enabled: warmupEnabled,
       weight_unit: unit,
       plate_system: plateSystem,
+      periodization_enabled: periodizationEnabled,
     });
     onClose();
   };
@@ -203,6 +205,20 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
               checked={warmupEnabled}
               aria-label="Prescribe warm-up sets"
               onChange={(e) => setWarmupEnabled(e.target.checked)}
+              className="h-6 w-6 rounded accent-emerald-600"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span className="flex flex-col">
+              <span className="font-medium">Planned periodization</span>
+              <span className="text-xs text-neutral-400">Waves hard, intensity, and deload weeks so you stall less. Off = pure session-to-session progression.</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={periodizationEnabled}
+              aria-label="Planned periodization"
+              onChange={(e) => setPeriodizationEnabled(e.target.checked)}
               className="h-6 w-6 rounded accent-emerald-600"
             />
           </label>

@@ -69,6 +69,7 @@ export interface ProfileRow {
   warmup_enabled: boolean | null;
   weight_unit: WeightUnit | null;
   plate_system: PlateSystem | null;
+  periodization_enabled: boolean | null;
 }
 
 /** Profile defaults for a brand-new user (no row yet, or nullable columns). */
@@ -84,4 +85,5 @@ export const PROFILE_DEFAULTS = {
   warmup_enabled: false,
   weight_unit: 'lb' as WeightUnit,
   plate_system: 'imperial' as PlateSystem,
+  periodization_enabled: true,
 };
