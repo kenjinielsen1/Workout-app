@@ -75,6 +75,7 @@ export function rowToSet(r: SetRow): LoggedSet {
     is_warmup: r.is_warmup,
     failed: r.failed,
     tempo: r.tempo,
+    pain: (r.pain as import('../lib/safety').PainType | null) ?? null,
   };
 }
 

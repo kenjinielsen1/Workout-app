@@ -82,7 +82,7 @@ export class InMemoryWorkoutStore implements WorkoutStore {
       rows.forEach(([weight, r, rir, warm], n) => {
         this.sets.push({
           id: nextId('set'), workout_id: id, exercise_id: exerciseId, set_number: n + 1,
-          weight_lb: weight, reps: r, rir, is_warmup: warm, failed: false, tempo: null,
+          weight_lb: weight, reps: r, rir, is_warmup: warm, failed: false, tempo: null, pain: null,
         });
       });
     });
@@ -173,7 +173,7 @@ export class InMemoryWorkoutStore implements WorkoutStore {
   }
 
   async logSet(input: LogSetInput): Promise<void> {
-    this.sets.push({ ...input, id: input.id ?? nextId('set'), tempo: input.tempo ?? null });
+    this.sets.push({ ...input, id: input.id ?? nextId('set'), tempo: input.tempo ?? null, pain: input.pain ?? null });
   }
 
   async deleteSet(setId: string): Promise<void> {

@@ -64,7 +64,9 @@ export function buildProgContext(
       performed_at: s.performed_at,
       target_reps,
       session_rpe: s.session_rpe ?? null,
-      pain_note: false,
+      // SCOPE_SAFETY.md: any pain flagged on this exercise this session freezes
+      // progression. Read from real per-set pain, not a placeholder.
+      pain_note: s.sets.some((set) => set.pain != null),
       sets: s.sets,
     };
   });

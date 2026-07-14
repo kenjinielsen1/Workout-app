@@ -54,6 +54,7 @@ export interface SetRow {
   is_warmup: boolean;
   failed: boolean;
   tempo: string | null;
+  pain: string | null;
 }
 
 export interface ProfileRow {

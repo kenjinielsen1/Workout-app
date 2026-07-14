@@ -14,6 +14,14 @@ import { weeklyHardSets, weekStartOf, volumeState } from '../lib/volume';
 import { landmarksFor } from '../lib/volumeLandmarks';
 import { blockPosition, isPlannedDeloadWeek, phaseIntent } from '../lib/periodization';
 import { activeObservations, balanceObservations, patternVolume, type DismissedFlag } from '../lib/balance';
+import {
+  overreachNudge,
+  painReferral,
+  PROFESSIONAL_REFERRAL_MESSAGE,
+  specialPopulationMessage,
+  type PainFlag,
+  type SpecialPopulation,
+} from '../lib/safety';
 import { formatDuration } from '../lib/liveProgression';
 import { LogSet, type LoggedSet } from './LogSet';
 import { ExerciseDetail } from './ExerciseDetail';
@@ -23,6 +31,8 @@ import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCh
 import { PlateauCard } from '../components/PlateauCard';
 import { IncrementPrompt } from '../components/IncrementPrompt';
 import { BalanceCard } from '../components/BalanceCard';
+import { SafetyNotice } from '../components/SafetyNotice';
+import { SafetyOnboarding } from '../components/SafetyOnboarding';
 import type { VolumeRow } from '../components/VolumeView';
 import type { PlateauChoice } from '../data/domain';
 import { Settings } from './Settings';
@@ -263,6 +273,7 @@ export function Home() {
         rir: logged.rir,
         is_warmup: logged.is_warmup,
         failed: logged.failed,
+        pain: logged.pain ?? null,
       });
       setAllSessions(await store.getAllSessions(userId)); // refresh detail; target holds
       void store.flush(); // sync to Supabase within ~a second (no-op offline/demo)
@@ -442,6 +453,54 @@ export function Home() {
     [userId],
   );
 
+  // SCOPE_SAFETY.md — one-time onboarding disclaimer + special-population capture.
+  const [onboardingSeen, setOnboardingSeen] = useState(true);
+  const [specialPops, setSpecialPops] = useState<SpecialPopulation[]>([]);
+  const [safetyDismissed, setSafetyDismissed] = useState(false);
+  useEffect(() => {
+    setOnboardingSeen(localStorage.getItem(`po:onboardingSeen:${userId}`) === '1');
+    try {
+      const raw = localStorage.getItem(`po:specialPop:${userId}`);
+      if (raw) setSpecialPops(JSON.parse(raw) as SpecialPopulation[]);
+    } catch {
+      /* ignore */
+    }
+  }, [userId]);
+
+  const acknowledgeOnboarding = useCallback(
+    (pops: SpecialPopulation[]) => {
+      localStorage.setItem(`po:onboardingSeen:${userId}`, '1');
+      localStorage.setItem(`po:specialPop:${userId}`, JSON.stringify(pops));
+      setSpecialPops(pops);
+      setOnboardingSeen(true);
+    },
+    [userId],
+  );
+
+  // Pain-pattern → professional referral (contextual, non-diagnostic).
+  const painReferralResult = useMemo(() => {
+    const flags: PainFlag[] = allSessions.flatMap((s) => {
+      const painful = s.sets.filter((x) => x.pain != null);
+      if (painful.length === 0) return [];
+      const type = painful.some((x) => x.pain === 'joint_sharp') ? 'joint_sharp' : 'muscular';
+      return [{ exercise_id: s.exercise_id, performed_at: s.performed_at, type }];
+    });
+    return painReferral(flags);
+  }, [allSessions]);
+
+  // Over-reaching: longest current run of consecutive training days (no rest).
+  const overreachMessage = useMemo(() => {
+    if (allSessions.length === 0) return null;
+    const days = [...new Set(allSessions.map((s) => s.performed_at.slice(0, 10)))].sort();
+    let streak = 1;
+    for (let i = days.length - 1; i > 0; i--) {
+      const gap = (Date.parse(days[i]!) - Date.parse(days[i - 1]!)) / 86_400_000;
+      if (gap === 1) streak++;
+      else break;
+    }
+    return overreachNudge({ upwardOverrides: 0, consecutiveDaysNoRest: streak, ignoredDeloads: 0 });
+  }, [allSessions]);
+
   // Hypertrophy under-volume signal for the plateau breaker: a stall at adequate
   // load may be an under-volume problem — suggest adding a set before deloading.
   const underVolume = useMemo(() => {
@@ -580,6 +639,24 @@ export function Home() {
 
       {tab === 'log' ? (
         <div className="flex flex-col gap-2 pt-3">
+          {painReferralResult.refer && (
+            <div className="px-4">
+              <SafetyNotice tone="refer" lead={painReferralResult.reason} message={PROFESSIONAL_REFERRAL_MESSAGE} />
+            </div>
+          )}
+          {specialPops.length > 0 && !safetyDismissed && (
+            <div className="px-4">
+              <SafetyNotice
+                message={specialPopulationMessage(specialPops[0]!)}
+                onDismiss={() => setSafetyDismissed(true)}
+              />
+            </div>
+          )}
+          {overreachMessage && !safetyDismissed && (
+            <div className="px-4">
+              <SafetyNotice message={overreachMessage} onDismiss={() => setSafetyDismissed(true)} />
+            </div>
+          )}
           {!checkinDismissed && workoutStartedAt === null && (
             <div className="px-4">
               <ReadinessCheckIn onSubmit={submitCheckin} onSkip={skipCheckin} />
@@ -650,6 +727,8 @@ export function Home() {
       {settingsOpen && (
         <Settings profile={profile} onSave={handleSaveSettings} onClose={() => setSettingsOpen(false)} />
       )}
+
+      {!onboardingSeen && <SafetyOnboarding onAcknowledge={acknowledgeOnboarding} />}
 
       {incrementPromptFor && index.get(incrementPromptFor) && (
         <IncrementPrompt

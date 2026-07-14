@@ -37,6 +37,16 @@ const session = (i: number, w: number, reps = 5, rir = 3): FeatureSession => ({
 describe('buildProgContext', () => {
   const sessions = [0, 1, 2, 3].map((i) => session(i, 185 + i * 5));
 
+  it('sets pain_note from real per-set pain, freezing progression (SCOPE_SAFETY.md)', () => {
+    const painful = [...sessions];
+    painful[3] = { ...session(3, 200), sets: [{ weight_lb: 200, reps: 5, rir: 3, pain: 'joint_sharp' }] };
+    const ctx = buildProgContext(painful, squat, index, profile);
+    expect(ctx.history[ctx.history.length - 1]!.pain_note).toBe(true);
+    expect(recommendProgression(ctx).action).toBe('freeze');
+    // A clean session (no pain) does not freeze.
+    expect(buildProgContext(sessions, squat, index, profile).history[3]!.pain_note).toBe(false);
+  });
+
   it('assembles a context the engine can consume', () => {
     const ctx = buildProgContext(sessions, squat, index, profile);
     expect(ctx.sessionsThisExercise).toBe(4);

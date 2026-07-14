@@ -593,6 +593,24 @@ describe('planned deload week (PROGRAMMING.md Part A)', () => {
   });
 });
 
+// --- SCOPE_SAFETY.md: pain freezes progression, full stop --------------------
+describe('pain freeze cannot be overridden (SCOPE_SAFETY.md)', () => {
+  it('a pain note freezes even with maximal readiness, a great check-in, and no planned deload', () => {
+    const hist = risingHistory([100, 105, 110, 115], 10, 4, 10, [8, 7.5, 7, 6.5]);
+    hist[hist.length - 1]!.pain_note = true;
+    const r = recommendProgression(
+      increaseCtx({
+        history: hist,
+        dailyReadiness: dailyReadiness({ sleep_quality: 5, soreness: 1, energy: 5 }), // best possible day
+        plannedDeload: false,
+        bestHistoricalE1RM: 999, // no e1RM ceiling to hide behind
+      }),
+    );
+    expect(r.action).toBe('freeze'); // nothing re-enables the increase
+    expect(r.target_weight_lb).toBeLessThanOrEqual(115); // never a load increase
+  });
+});
+
 // --- guards -----------------------------------------------------------------
 describe('guards', () => {
   it('throws on empty history', () => {

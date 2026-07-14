@@ -4,6 +4,7 @@
 
 import type { Equipment, Goal, LoadType, MovementPattern } from '../lib/types';
 import type { PlateSystem, WeightUnit } from '../lib/units';
+import type { PainType } from '../lib/safety';
 
 export interface Exercise {
   id: string;
@@ -99,6 +100,8 @@ export interface LoggedSet {
   is_warmup: boolean;
   failed: boolean;
   tempo: string | null;
+  /** Pain flagged on this set (SCOPE_SAFETY.md); freezes progression. */
+  pain: PainType | null;
 }
 
 /**

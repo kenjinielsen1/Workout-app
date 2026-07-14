@@ -6,6 +6,7 @@ import { plateLoadout } from '../lib/plateMath';
 import { formatRest, nextSetTarget } from '../lib/liveProgression';
 import type { HistorySession } from '../lib/exerciseStats';
 import { warmupPlan } from '../lib/warmup';
+import type { PainType } from '../lib/safety';
 import {
   BARBELL_KG_STEP,
   displayStep,
@@ -59,6 +60,8 @@ export interface LoggedSet {
   failed: boolean;
   /** Set a new e1RM personal record this session (FEATURES.md #4). Display-only. */
   is_pr?: boolean;
+  /** Pain flagged on this set (SCOPE_SAFETY.md); freezes progression. */
+  pain?: PainType | null;
 }
 
 interface LogSetProps {
@@ -109,6 +112,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   const [prCelebration, setPrCelebration] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [warmupsDone, setWarmupsDone] = useState<Set<number>>(new Set());
+  const [pain, setPain] = useState<PainType | null>(null);
 
   // Opt-in warm-up ramp up to the working weight (FEATURES.md #1). Logged as
   // is_warmup so they never touch e1RM / progression.
@@ -165,9 +169,10 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
       setPrCelebration(null); // a normal working set clears a stale celebration
     }
 
-    const logged: LoggedSet = { ...s, id: newId(), set_number: sets.length + 1, is_pr };
+    const logged: LoggedSet = { ...s, id: newId(), set_number: sets.length + 1, is_pr, pain };
     setSets((prev) => [...prev, logged]);
     onLogSet?.(logged);
+    if (pain) setPain(null); // clear after flagging so it doesn't silently carry
 
     // LIVE within-session autoregulation: advance the next set instantly, locally.
     if (!s.is_warmup) {
@@ -353,6 +358,39 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
         />
         Warm-up set (excluded from progression)
       </label>
+
+      {/* SCOPE_SAFETY.md: flag pain (not just soreness). Freezes progression. */}
+      <div className="flex flex-col gap-1" role="group" aria-label="Flag pain">
+        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Pain on this set? (not normal soreness)</span>
+        <div className="flex gap-1.5">
+          {([
+            [null, 'None'],
+            ['muscular', 'Achy / muscular'],
+            ['joint_sharp', 'Sharp / joint'],
+          ] as const).map(([value, label]) => (
+            <button
+              key={label}
+              type="button"
+              aria-pressed={pain === value}
+              onClick={() => setPain(value)}
+              className={`flex-1 rounded-xl py-2 text-xs font-semibold ${
+                pain === value
+                  ? value === null
+                    ? 'bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-100'
+                    : 'bg-amber-500 text-white'
+                  : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {pain && (
+          <span className="text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+            Flagging pain pauses progression on this lift — that’s a safety feature, not a setback.
+          </span>
+        )}
+      </div>
 
       <div className="flex flex-col gap-2">
         <button

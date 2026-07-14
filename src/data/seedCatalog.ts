@@ -66,7 +66,7 @@ export function demoHistory(
     rows.forEach(([weight, r, rir, warm], n) => {
       sets.push({
         id: `demo-set-${i}-${n}`, workout_id: wid, exercise_id: exerciseId, set_number: n + 1,
-        weight_lb: weight, reps: r, rir, is_warmup: warm, failed: false, tempo: null,
+        weight_lb: weight, reps: r, rir, is_warmup: warm, failed: false, tempo: null, pain: null,
       });
     });
   });

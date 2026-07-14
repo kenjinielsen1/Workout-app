@@ -57,6 +57,8 @@ export interface FeatureSet {
   rir?: number | null;
   is_warmup?: boolean;
   failed?: boolean;
+  /** Pain flagged on this set (SCOPE_SAFETY.md) — drives the freeze veto. */
+  pain?: 'muscular' | 'joint_sharp' | null;
 }
 
 export interface FeatureSession {

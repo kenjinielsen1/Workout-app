@@ -5,7 +5,7 @@ import { WorkoutLog, type WorkoutLogEntry } from './WorkoutLog';
 import type { LoggedSet } from '../data/domain';
 
 const set = (id: string, set_number: number, weight_lb: number, reps: number, extra: Partial<LoggedSet> = {}): LoggedSet => ({
-  id, workout_id: 'w', exercise_id: 'e', set_number, weight_lb, reps, rir: 2, is_warmup: false, failed: false, tempo: null, ...extra,
+  id, workout_id: 'w', exercise_id: 'e', set_number, weight_lb, reps, rir: 2, is_warmup: false, failed: false, tempo: null, pain: null, ...extra,
 });
 
 const entries: WorkoutLogEntry[] = [

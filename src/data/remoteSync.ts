@@ -42,7 +42,7 @@ export class SupabaseRemoteSync implements RemoteSync {
     return this.upsert('sets', {
       id: s.id, workout_id: s.workout_id, exercise_id: s.exercise_id, set_number: s.set_number,
       weight_lb: s.weight_lb, reps: s.reps, rir: s.rir, is_warmup: s.is_warmup,
-      failed: s.failed, tempo: s.tempo,
+      failed: s.failed, tempo: s.tempo, pain: s.pain,
     });
   }
 

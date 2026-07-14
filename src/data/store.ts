@@ -2,6 +2,7 @@
 // so the in-memory store (demo / tests) and the Supabase store are interchangeable.
 
 import type { SearchableExercise } from '../lib/exerciseSearch';
+import type { PainType } from '../lib/safety';
 import type {
   AllSession,
   CreateExerciseInput,
@@ -40,6 +41,7 @@ export interface LogSetInput {
   is_warmup: boolean;
   failed: boolean;
   tempo?: string | null;
+  pain?: PainType | null;
 }
 
 export interface WorkoutStore {

@@ -39,9 +39,9 @@ describe('mappers', () => {
       ['w1', { id: 'w1', user_id: 'u', performed_at: '2026-01-01T00:00:00Z', notes: null, session_rpe: 7, sleep_quality: null, soreness: null, energy: null, readiness_score: null }],
     ]);
     const sets: LoggedSet[] = [
-      { id: 's3', workout_id: 'w2', exercise_id: 'e', set_number: 1, weight_lb: 210, reps: 5, rir: 2, is_warmup: false, failed: false, tempo: null },
-      { id: 's2', workout_id: 'w1', exercise_id: 'e', set_number: 2, weight_lb: 205, reps: 5, rir: 1, is_warmup: false, failed: false, tempo: null },
-      { id: 's1', workout_id: 'w1', exercise_id: 'e', set_number: 1, weight_lb: 205, reps: 5, rir: 2, is_warmup: false, failed: false, tempo: null },
+      { id: 's3', workout_id: 'w2', exercise_id: 'e', set_number: 1, weight_lb: 210, reps: 5, rir: 2, is_warmup: false, failed: false, tempo: null, pain: null },
+      { id: 's2', workout_id: 'w1', exercise_id: 'e', set_number: 2, weight_lb: 205, reps: 5, rir: 1, is_warmup: false, failed: false, tempo: null, pain: null },
+      { id: 's1', workout_id: 'w1', exercise_id: 'e', set_number: 1, weight_lb: 205, reps: 5, rir: 2, is_warmup: false, failed: false, tempo: null, pain: null },
     ];
     const sessions = groupSetsIntoSessions(sets, workouts);
     expect(sessions.map((s) => s.performed_at)).toEqual([
@@ -57,7 +57,7 @@ describe('mappers', () => {
     const s = rowToSet({
       id: 's', workout_id: 'w', exercise_id: 'e', set_number: 1,
       weight_lb: '225' as unknown as number, reps: 5, rir: '2' as unknown as number,
-      is_warmup: false, failed: false, tempo: null,
+      is_warmup: false, failed: false, tempo: null, pain: null,
     } satisfies SetRow);
     expect(s.weight_lb).toBe(225);
     expect(s.rir).toBe(2);

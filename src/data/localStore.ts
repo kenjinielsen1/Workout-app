@@ -205,7 +205,7 @@ export class LocalFirstStore implements WorkoutStore {
 
   async logSet(input: LogSetInput): Promise<void> {
     await this.ready;
-    const s: LoggedSet = { ...input, id: input.id ?? uuid(), tempo: input.tempo ?? null };
+    const s: LoggedSet = { ...input, id: input.id ?? uuid(), tempo: input.tempo ?? null, pain: input.pain ?? null };
     await this.db.put('sets', s);
     await this.enqueue({ kind: 'set', payload: s });
   }
