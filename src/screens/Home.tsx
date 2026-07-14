@@ -19,7 +19,7 @@ import {
 import { equipmentIncrement, snapToLoadable } from '../lib/rounding';
 import { variantsOf } from '../lib/variants';
 import { weeklyHardSets, weekStartOf, volumeState } from '../lib/volume';
-import { landmarksFor } from '../lib/volumeLandmarks';
+import { personalLandmarks, updateVolumeOffset } from '../lib/volumeLandmarks';
 import { blockPosition, isPlannedDeloadWeek, phaseIntent } from '../lib/periodization';
 import { activeObservations, balanceObservations, patternVolume, type DismissedFlag } from '../lib/balance';
 import {
@@ -378,6 +378,24 @@ export function Home() {
       }
       recommendationId.current = null;
     }
+
+    // Audit fix #2: nudge this exercise's muscles' landmark estimates from their
+    // performance-at-volume this week. updateMRVEstimate self-gates (no clear
+    // signal → no change), so this is safe to run every finish.
+    if (profile && ex && target) {
+      const all = await store.getAllSessions(userId);
+      const week = weeklyHardSets(all, index, profile, profile.goal, weekStartOf(new Date().toISOString()));
+      const exSessions = all.filter((s) => s.exercise_id === selectedId);
+      const latest = exSessions.sort((a, b) => new Date(a.performed_at).getTime() - new Date(b.performed_at).getTime()).at(-1);
+      const working = latest?.sets.filter((s) => !s.is_warmup) ?? [];
+      const performedWell = working.some((s) => !s.failed && s.reps >= target.target_reps);
+      const cal: Record<string, number> = { ...(profile.volume_calibration ?? {}) };
+      for (const m of new Set([...ex.primary_muscles, ...ex.secondary_muscles])) {
+        cal[m] = updateVolumeOffset(m, cal[m] ?? 0, week.get(m) ?? 0, performedWell);
+      }
+      setProfile(await store.upsertProfile(userId, { volume_calibration: cal }));
+    }
+
     // Precompute & persist the NEXT session's prescription so the next open is
     // instant and network-free (OFFLINE_FIRST: today's session is precomputed).
     if (profile && ex) {
@@ -418,7 +436,7 @@ export function Home() {
     return [...new Set(muscles)].map((muscle) => ({
       muscle,
       hardSets: week.get(muscle) ?? 0,
-      landmarks: landmarksFor(muscle),
+      landmarks: personalLandmarks(muscle, profile.volume_calibration?.[muscle] ?? 0),
     }));
   }, [allSessions, index, selected, profile]);
 

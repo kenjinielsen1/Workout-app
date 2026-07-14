@@ -21,6 +21,7 @@ const profile: Profile = {
   weight_unit: 'lb',
   plate_system: 'imperial',
   periodization_enabled: true,
+  volume_calibration: {},
 };
 
 function setup() {

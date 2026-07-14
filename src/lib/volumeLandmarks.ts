@@ -31,6 +31,27 @@ export function landmarksFor(muscle: string): Landmarks {
   return { ...volumeLandmarkDefault(), ...(volumeLandmarkOverrides()[muscle] ?? {}) };
 }
 
+/** A muscle's landmarks personalized by the user's stored per-muscle offset (in
+ *  sets) — the config prior plus their revealed tolerance (audit fix #2). */
+export function personalLandmarks(muscle: string, offsetSets = 0): Landmarks {
+  return applyCalibration(landmarksFor(muscle), offsetSets);
+}
+
+/** Update a muscle's stored offset from one observed week: feed the current MRV
+ *  estimate (config prior + old offset) into updateMRVEstimate, return the new
+ *  offset as a delta from the config prior (so an evidence-config bump still
+ *  shifts everyone appropriately). */
+export function updateVolumeOffset(
+  muscle: string,
+  oldOffsetSets: number,
+  observedVolume: number,
+  performedWell: boolean,
+): number {
+  const priorMRV = landmarksFor(muscle).mrv;
+  const newMRV = updateMRVEstimate(priorMRV + oldOffsetSets, observedVolume, performedWell);
+  return Number((newMRV - priorMRV).toFixed(3));
+}
+
 /**
  * Apply a learned per-user offset (in sets) to the whole band, keeping the
  * landmarks ordered and non-negative. A positive offset = this user tolerates

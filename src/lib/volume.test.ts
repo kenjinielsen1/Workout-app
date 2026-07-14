@@ -10,7 +10,7 @@ import {
   type VolExercise,
   type VolSession,
 } from './volume';
-import { landmarksFor, updateMRVEstimate } from './volumeLandmarks';
+import { landmarksFor, personalLandmarks, updateMRVEstimate, updateVolumeOffset } from './volumeLandmarks';
 
 const experienced = { training_age_months: 36 }; // correctedRIR bias 1.2
 const bench: VolExercise = { primary_muscles: ['pectorals', 'triceps'], secondary_muscles: ['front_delts'] };
@@ -119,5 +119,28 @@ describe('per-user MRV calibration', () => {
 describe('muscle-specific landmarks', () => {
   it('side delts tolerate more than the lower back', () => {
     expect(landmarksFor('side_delts').mrv).toBeGreaterThan(landmarksFor('erectors').mrv);
+  });
+});
+
+describe('per-user volume-landmark calibration (audit fix #2)', () => {
+  const priorMRV = landmarksFor('pectorals').mrv; // 22
+
+  it('holding performance at a high volume raises the muscle\'s MRV above the prior', () => {
+    let offset = 0;
+    for (let i = 0; i < 6; i++) offset = updateVolumeOffset('pectorals', offset, 22, true);
+    expect(personalLandmarks('pectorals', offset).mrv).toBeGreaterThan(priorMRV);
+  });
+
+  it('stalling at a lower volume drops the estimate below the prior', () => {
+    let offset = 0;
+    for (let i = 0; i < 6; i++) offset = updateVolumeOffset('pectorals', offset, 14, false);
+    expect(personalLandmarks('pectorals', offset).mrv).toBeLessThan(priorMRV);
+  });
+
+  it('the offset is a pure delta from the config prior (survives an evidence-config bump)', () => {
+    const p = personalLandmarks('pectorals', 3);
+    expect(p.mrv).toBe(landmarksFor('pectorals').mrv + 3);
+    expect(p.mev).toBe(landmarksFor('pectorals').mev + 3);
+    expect(personalLandmarks('pectorals', 0)).toEqual(landmarksFor('pectorals')); // no offset = prior
   });
 });

@@ -71,6 +71,9 @@ export interface Profile {
   plate_system: PlateSystem;
   /** Proactive periodization on/off (PROGRAMMING.md Part A). */
   periodization_enabled: boolean;
+  /** Per-muscle volume-landmark offset in sets, a delta from the config priors
+   *  (audit fix #2). Keyed by fine-grained muscle name. */
+  volume_calibration: Record<string, number>;
 }
 
 export interface Workout {
