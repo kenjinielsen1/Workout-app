@@ -5,5 +5,10 @@
 alter table sets
   add column if not exists pain text;
 
-alter table sets
-  add constraint pain_valid check (pain is null or pain in ('muscular', 'joint_sharp'));
+-- Idempotent: Postgres has no "add constraint if not exists" for CHECK, so guard
+-- the duplicate so a full replay (fresh clone / recovery) doesn't abort here.
+do $$ begin
+  alter table sets
+    add constraint pain_valid check (pain is null or pain in ('muscular', 'joint_sharp'));
+exception when duplicate_object then null;
+end $$;
