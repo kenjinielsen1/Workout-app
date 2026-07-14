@@ -7,6 +7,9 @@ import {
   readinessSignals,
   recommendProgression,
   repRangeForGoal,
+  rirObservedError,
+  isCalibratable,
+  RIR_CALIBRATION_TRUST_N,
   READINESS_INCREASE,
   targetRIRForGoal,
   updateCalibrationOffset,
@@ -101,9 +104,38 @@ describe('correctedRIR', () => {
   it('shrinks reports 3+ away from failure', () => {
     expect(correctedRIR(3, experienced, 8)).toBeCloseTo(3 + 1.2 + 0.5, 10);
   });
-  it('subtracts the learned personal offset', () => {
-    const u = { ...experienced, rir_calibration_offset: 1.0 };
+  it('subtracts the learned personal offset once it is trusted', () => {
+    const u = { ...experienced, rir_calibration_offset: 1.0, rir_calibration_n: RIR_CALIBRATION_TRUST_N };
     expect(correctedRIR(0, u, 8)).toBeCloseTo(1.2 - 1.0, 10);
+  });
+});
+
+// --- Part 6: dynamic RIR personal-calibration loop (audit fix #1) ------------
+describe('RIR personal calibration loop', () => {
+  it('the offset is IGNORED until the trust threshold of contributions is met', () => {
+    const below = { ...experienced, rir_calibration_offset: 2.0, rir_calibration_n: RIR_CALIBRATION_TRUST_N - 1 };
+    const at = { ...experienced, rir_calibration_offset: 2.0, rir_calibration_n: RIR_CALIBRATION_TRUST_N };
+    expect(correctedRIR(0, below, 8)).toBeCloseTo(1.2, 10); // prior only — one bad test can't swing it
+    expect(correctedRIR(0, at, 8)).toBeCloseTo(1.2 - 2.0, 10); // trusted → applies
+  });
+
+  it('converges toward the user’s true rep bias across failure tests', () => {
+    // A user who consistently gets 2 more reps than they predict → observedError +2.
+    let offset = 0;
+    for (let i = 0; i < 15; i++) offset = updateCalibrationOffset(offset, rirObservedError(8, 10));
+    expect(offset).toBeCloseTo(2, 1);
+  });
+
+  it('observedError is actual − predicted reps', () => {
+    expect(rirObservedError(8, 10)).toBe(2);
+    expect(rirObservedError(10, 8)).toBe(-2);
+  });
+
+  it('a failure test is offered only on non-barbell isolation work, never a compound/barbell', () => {
+    expect(isCalibratable({ is_compound: false, equipment: 'dumbbell' })).toBe(true);
+    expect(isCalibratable({ is_compound: false, equipment: 'cable' })).toBe(true);
+    expect(isCalibratable({ is_compound: true, equipment: 'barbell' })).toBe(false); // compound
+    expect(isCalibratable({ is_compound: false, equipment: 'barbell' })).toBe(false); // barbell excluded
   });
 });
 
@@ -206,7 +238,7 @@ describe('hard vetoes — each blocks/bounds an otherwise-increasing state', () 
   });
 
   it('#5 final working set at the load ceiling (corrected RIR < 0.5)', () => {
-    const u = { ...experienced, rir_calibration_offset: 2.0 };
+    const u = { ...experienced, rir_calibration_offset: 2.0, rir_calibration_n: RIR_CALIBRATION_TRUST_N };
     const hist = risingHistory([100, 105, 110, 115], 10, 4, 10, [8, 7.5, 7, 6.5]);
     // Heavy top sets fresh; light back-off taken to failure last.
     hist[3]!.sets = [
@@ -277,6 +309,7 @@ describe('double progression invariant (10k random states)', () => {
         goal,
         training_age_months: [2, 10, 30, 60][i % 4]!,
         rir_calibration_offset: Math.random() * 2,
+        rir_calibration_n: RIR_CALIBRATION_TRUST_N,
       };
       const target = 3 + Math.floor(Math.random() * 12);
       const hist: ProgSession[] = [0, 1, 2, 3].map((k) => ({

@@ -14,6 +14,8 @@ const profile: Profile = {
   has_micro_plates: false,
   dumbbell_increment_lb: 5,
   rir_calibration_offset: 0,
+  rir_calibration_n: 0,
+  rir_calibration_updated: null,
   ml_alpha_cap: 1,
   warmup_enabled: false,
   weight_unit: 'lb',

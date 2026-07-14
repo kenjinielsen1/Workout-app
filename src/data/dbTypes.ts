@@ -66,6 +66,8 @@ export interface ProfileRow {
   has_micro_plates: boolean;
   dumbbell_increment_lb: number;
   rir_calibration_offset: number | null;
+  rir_calibration_n: number | null;
+  rir_calibration_updated: string | null;
   ml_alpha_cap: number | null;
   warmup_enabled: boolean | null;
   weight_unit: WeightUnit | null;
@@ -82,6 +84,8 @@ export const PROFILE_DEFAULTS = {
   has_micro_plates: false,
   dumbbell_increment_lb: 5,
   rir_calibration_offset: 0,
+  rir_calibration_n: 0,
+  rir_calibration_updated: null as string | null,
   ml_alpha_cap: 1,
   warmup_enabled: false,
   weight_unit: 'lb' as WeightUnit,

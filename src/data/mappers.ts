@@ -37,6 +37,8 @@ export function rowToProfile(r: ProfileRow): Profile {
     has_micro_plates: r.has_micro_plates ?? PROFILE_DEFAULTS.has_micro_plates,
     dumbbell_increment_lb: Number(r.dumbbell_increment_lb ?? PROFILE_DEFAULTS.dumbbell_increment_lb),
     rir_calibration_offset: Number(r.rir_calibration_offset ?? PROFILE_DEFAULTS.rir_calibration_offset),
+    rir_calibration_n: Number(r.rir_calibration_n ?? PROFILE_DEFAULTS.rir_calibration_n),
+    rir_calibration_updated: r.rir_calibration_updated ?? null,
     ml_alpha_cap: Number(r.ml_alpha_cap ?? PROFILE_DEFAULTS.ml_alpha_cap),
     warmup_enabled: r.warmup_enabled ?? PROFILE_DEFAULTS.warmup_enabled,
     weight_unit: r.weight_unit ?? PROFILE_DEFAULTS.weight_unit,

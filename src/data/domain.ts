@@ -59,6 +59,9 @@ export interface Profile {
   has_micro_plates: boolean;
   dumbbell_increment_lb: number;
   rir_calibration_offset: number;
+  /** Failure-test contributions to the offset + when last updated (audit fix #1). */
+  rir_calibration_n: number;
+  rir_calibration_updated: string | null;
   /** Per-user ML blend cap set by the nightly job: 1 = ML allowed, 0 = rules only. */
   ml_alpha_cap: number;
   /** Opt-in prescribed warm-up ramp (FEATURES.md #1). Off by default. */

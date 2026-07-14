@@ -24,7 +24,7 @@ describe('mappers', () => {
     const row = {
       user_id: 'u1', bodyweight_lb: null, training_age_months: null, goal: 'strength',
       sessions_per_week: null, has_micro_plates: false, dumbbell_increment_lb: 5,
-      rir_calibration_offset: null, ml_alpha_cap: null, warmup_enabled: null, weight_unit: null, plate_system: null, periodization_enabled: null,
+      rir_calibration_offset: null, rir_calibration_n: null, rir_calibration_updated: null, ml_alpha_cap: null, warmup_enabled: null, weight_unit: null, plate_system: null, periodization_enabled: null,
     } satisfies ProfileRow;
     const p = rowToProfile(row);
     expect(p.bodyweight_lb).toBe(175);

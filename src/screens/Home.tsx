@@ -7,7 +7,15 @@ import { exerciseFeatures, recommendTarget, sessionsForExercise } from '../lib/r
 import { isMLConfigured, predict } from '../lib/mlClient';
 import type { FinalTarget, MLPrediction } from '../lib/blend';
 import { bestSetE1RM, recentSessions, summarize } from '../lib/exerciseStats';
-import { dailyReadiness, repRangeForGoal, shiftedRepRange, type DailyCheckin } from '../lib/progression';
+import {
+  dailyReadiness,
+  isCalibratable,
+  repRangeForGoal,
+  rirObservedError,
+  shiftedRepRange,
+  updateCalibrationOffset,
+  type DailyCheckin,
+} from '../lib/progression';
 import { equipmentIncrement, snapToLoadable } from '../lib/rounding';
 import { variantsOf } from '../lib/variants';
 import { weeklyHardSets, weekStartOf, volumeState } from '../lib/volume';
@@ -33,6 +41,7 @@ import { IncrementPrompt } from '../components/IncrementPrompt';
 import { BalanceCard } from '../components/BalanceCard';
 import { SafetyNotice } from '../components/SafetyNotice';
 import { SafetyOnboarding } from '../components/SafetyOnboarding';
+import { RirCalibrationPrompt } from '../components/RirCalibrationPrompt';
 import type { VolumeRow } from '../components/VolumeView';
 import type { PlateauChoice } from '../data/domain';
 import { Settings } from './Settings';
@@ -508,6 +517,32 @@ export function Home() {
     return volumeRows.some((r) => r.hardSets < r.landmarks.mav && volumeState(r.hardSets, r.landmarks) !== 'over_mrv');
   }, [profile, volumeRows]);
 
+  // RIR calibration (audit fix #1): offer a failure test at most ~weekly, and
+  // ONLY on non-barbell isolation work. Capture → update the existing offset via
+  // the existing EWMA → persist the offset + contribution count.
+  const [calibrateOpen, setCalibrateOpen] = useState(false);
+  const canCalibrate = useMemo(() => {
+    if (!selected || !profile || !isCalibratable(selected)) return false;
+    const last = profile.rir_calibration_updated;
+    return !last || Date.now() - Date.parse(last) > 7 * 86_400_000;
+  }, [selected, profile]);
+
+  const submitCalibration = useCallback(
+    async (predictedReps: number, actualReps: number) => {
+      if (!profile) return;
+      setCalibrateOpen(false);
+      const observedError = rirObservedError(predictedReps, actualReps);
+      const updated = await store.upsertProfile(userId, {
+        rir_calibration_offset: updateCalibrationOffset(profile.rir_calibration_offset ?? 0, observedError),
+        rir_calibration_n: (profile.rir_calibration_n ?? 0) + 1,
+        rir_calibration_updated: new Date().toISOString(),
+      });
+      setProfile(updated);
+      void store.flush();
+    },
+    [store, userId, profile],
+  );
+
   // Plateau breaker (FEATURES.md #5): the engine flags a genuine stall on the
   // target; offer a choice rather than silently deloading. Resolved (or twice
   // ignored) cards stay hidden for the exercise.
@@ -657,6 +692,21 @@ export function Home() {
               <SafetyNotice message={overreachMessage} onDismiss={() => setSafetyDismissed(true)} />
             </div>
           )}
+          {canCalibrate && (
+            <div className="px-4">
+              <button
+                type="button"
+                onClick={() => setCalibrateOpen(true)}
+                className="mx-auto flex w-full max-w-md items-center justify-between gap-3 rounded-2xl border border-dashed border-neutral-300 px-4 py-3 text-left text-sm active:scale-[0.99] dark:border-neutral-700"
+              >
+                <span className="flex flex-col">
+                  <span className="font-semibold">Calibrate your RIR (weekly)</span>
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400">A quick failure test on this isolation lift sharpens every recommendation.</span>
+                </span>
+                <span aria-hidden className="text-neutral-400">→</span>
+              </button>
+            </div>
+          )}
           {!checkinDismissed && workoutStartedAt === null && (
             <div className="px-4">
               <ReadinessCheckIn onSubmit={submitCheckin} onSkip={skipCheckin} />
@@ -729,6 +779,14 @@ export function Home() {
       )}
 
       {!onboardingSeen && <SafetyOnboarding onAcknowledge={acknowledgeOnboarding} />}
+
+      {calibrateOpen && selected && (
+        <RirCalibrationPrompt
+          exerciseName={selected.name}
+          onSubmit={submitCalibration}
+          onSkip={() => setCalibrateOpen(false)}
+        />
+      )}
 
       {incrementPromptFor && index.get(incrementPromptFor) && (
         <IncrementPrompt

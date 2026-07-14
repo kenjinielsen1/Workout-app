@@ -61,6 +61,9 @@ export interface ProgProfile {
   training_age_months: number;
   /** Learned per-user RIR bias (Part 6). Positive = user has more reps than they say. */
   rir_calibration_offset?: number;
+  /** Number of failure-test contributions to that offset. Below the trust
+   *  threshold the offset is ignored and the experience prior stands. */
+  rir_calibration_n?: number;
 }
 
 export interface ProgSet {
@@ -149,7 +152,7 @@ export interface ProgRecommendation {
 // accepts any profile-like carrying those (e.g. the feature pipeline's).
 export function correctedRIR(
   reported: number,
-  user: Pick<ProgProfile, 'training_age_months' | 'rir_calibration_offset'>,
+  user: Pick<ProgProfile, 'training_age_months' | 'rir_calibration_offset' | 'rir_calibration_n'>,
   reps: number,
 ): number {
   const experienceBias = cfg.experienceBias(user.training_age_months);
@@ -157,8 +160,26 @@ export function correctedRIR(
   const repPenalty = reps > rp.aboveReps ? rp.perRep * (reps - rp.aboveReps) : 0;
   const dp = cfg.distancePenalty();
   const distancePenalty = reported >= dp.atOrAboveRir ? dp.penalty : 0;
-  const personalOffset = user.rir_calibration_offset ?? 0;
+  // Trust gate (Part 6): the learned offset only bites after enough failure-test
+  // contributions — one bad day can't swing it, and a new user keeps the prior.
+  const trusted = (user.rir_calibration_n ?? 0) >= RIR_CALIBRATION_TRUST_N;
+  const personalOffset = trusted ? (user.rir_calibration_offset ?? 0) : 0;
   return reported + experienceBias + repPenalty + distancePenalty - personalOffset;
+}
+
+/** Contributions required before the learned RIR offset is trusted (Part 6). */
+export const RIR_CALIBRATION_TRUST_N = 4;
+
+/** One failure test → the observed personal bias to fold into the offset:
+ *  reps actually completed minus the reps the user predicted they'd get. */
+export function rirObservedError(predictedReps: number, actualReps: number): number {
+  return actualReps - predictedReps;
+}
+
+/** A failure test may ONLY be offered on non-barbell isolation work — never a
+ *  heavy compound or any barbell lift (SCOPE_SAFETY.md). */
+export function isCalibratable(ex: { is_compound: boolean; equipment: Equipment }): boolean {
+  return !ex.is_compound && ex.equipment !== 'barbell';
 }
 
 // Part 3 — goal-specific proximity target (midpoint of the config window) and rep
