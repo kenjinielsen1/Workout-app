@@ -113,6 +113,20 @@ describe('per-machine overrides (INCREMENTS.md)', () => {
   });
 });
 
+describe('precomputed next-session cache is keyed by goal (audit fix #5)', () => {
+  const target = { target_weight_lb: 225, target_reps: 5, target_sets: 3 };
+
+  it('a goal change cannot serve a stale cached target', async () => {
+    const store = new LocalFirstStore({ dbName: dbName() });
+    // Precompute written while the user was on the strength goal.
+    await store.saveNextSession(U, 'squat', target, 'strength');
+    expect(await store.getNextSession(U, 'squat', 'strength')).toEqual(target);
+    // After switching to hypertrophy, the old-goal entry is unreachable by key —
+    // the read misses and the caller falls through to a live recompute.
+    expect(await store.getNextSession(U, 'squat', 'hypertrophy')).toBeNull();
+  });
+});
+
 describe('evidence-config version stamping (EVIDENCE_CONFIG.md)', () => {
   it('records the active config version on every recommendation', async () => {
     const remote = new MockRemote();
@@ -209,10 +223,10 @@ describe('precomputed next session', () => {
     const name = dbName();
     const remote = new MockRemote();
     const s1 = new LocalFirstStore({ dbName: name, remote });
-    await s1.saveNextSession(U, 'barbell-back-squat', { target_weight_lb: 235, target_reps: 3, target_sets: 3, rationale: 'x' });
+    await s1.saveNextSession(U, 'barbell-back-squat', { target_weight_lb: 235, target_reps: 3, target_sets: 3, rationale: 'x' }, 'strength');
 
     const s2 = new LocalFirstStore({ dbName: name, remote });
-    const next = await s2.getNextSession(U, 'barbell-back-squat');
+    const next = await s2.getNextSession(U, 'barbell-back-squat', 'strength');
     expect(next!.target_weight_lb).toBe(235);
     expect(remote.calls).toBe(0); // reading the prescription touched no network
   });

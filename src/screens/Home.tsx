@@ -205,7 +205,7 @@ export function Home() {
       // OFFLINE-FIRST live path: the shown number is pure local TS, no network.
       // Prefer a target precomputed at the last session's finish — but only when
       // nothing this week changes it (today's check-in, or a planned deload).
-      const precomputed = (await store.getNextSession(userId, exId)) as FinalTarget | null;
+      const precomputed = (await store.getNextSession(userId, exId, p.goal)) as FinalTarget | null;
       const fresh =
         readinessValue === 0 && !plannedDeload && precomputed
           ? precomputed
@@ -374,7 +374,7 @@ export function Home() {
     if (profile && ex) {
       const all = await store.getAllSessions(userId);
       const next = recommendTarget(all, ex, index, profile, null, profile.ml_alpha_cap);
-      if (next) await store.saveNextSession(userId, selectedId, next);
+      if (next) await store.saveNextSession(userId, selectedId, next, profile.goal);
     }
     if (profile) await computeTarget(selectedId, profile);
     void store.flush(); // push the session's sets/recommendation/outcome now
