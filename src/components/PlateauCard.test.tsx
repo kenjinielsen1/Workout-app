@@ -36,6 +36,17 @@ describe('PlateauCard', () => {
     expect(screen.getByText(/swap to a variation/i)).toBeInTheDocument();
   });
 
+  it('suggests adding volume before deloading on a hypertrophy under-volume stall (VOLUME.md)', () => {
+    const { rerender } = render(
+      <PlateauCard currentRange={range} shiftedRange={shifted} variants={[]} onChoose={vi.fn()} onDismiss={vi.fn()} />,
+    );
+    expect(screen.queryByText(/try more volume first/i)).not.toBeInTheDocument();
+    rerender(
+      <PlateauCard currentRange={range} shiftedRange={shifted} variants={[]} underVolume onChoose={vi.fn()} onDismiss={vi.fn()} />,
+    );
+    expect(screen.getByText(/try more volume first/i)).toBeInTheDocument();
+  });
+
   it('logs a variation choice with the variant id', async () => {
     const onChoose = vi.fn();
     const user = userEvent.setup();

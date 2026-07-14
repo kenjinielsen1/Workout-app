@@ -10,6 +10,8 @@ import { bestSetE1RM, recentSessions, summarize } from '../lib/exerciseStats';
 import { dailyReadiness, repRangeForGoal, shiftedRepRange, type DailyCheckin } from '../lib/progression';
 import { equipmentIncrement, snapToLoadable } from '../lib/rounding';
 import { variantsOf } from '../lib/variants';
+import { weeklyHardSets, weekStartOf, volumeState } from '../lib/volume';
+import { landmarksFor } from '../lib/volumeLandmarks';
 import { formatDuration } from '../lib/liveProgression';
 import { LogSet, type LoggedSet } from './LogSet';
 import { ExerciseDetail } from './ExerciseDetail';
@@ -18,6 +20,7 @@ import { WorkoutLog, type WorkoutLogEntry } from '../components/WorkoutLog';
 import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCheckIn';
 import { PlateauCard } from '../components/PlateauCard';
 import { IncrementPrompt } from '../components/IncrementPrompt';
+import type { VolumeRow } from '../components/VolumeView';
 import type { PlateauChoice } from '../data/domain';
 import { Settings } from './Settings';
 
@@ -378,6 +381,26 @@ export function Home() {
     return recentSessions(detailSessions, { load_type: selected.load_type }, { bodyweight_lb: profile.bodyweight_lb }, 5);
   }, [detailSessions, selected, profile]);
 
+  // This week's hard-set volume for the muscles the selected lift trains
+  // (VOLUME.md). Read-only view; computed from all sessions + the catalog.
+  const volumeRows = useMemo<VolumeRow[]>(() => {
+    if (!selected || !profile) return [];
+    const week = weeklyHardSets(allSessions, index, profile, profile.goal, weekStartOf(new Date().toISOString()));
+    const muscles = [...selected.primary_muscles, ...selected.secondary_muscles];
+    return [...new Set(muscles)].map((muscle) => ({
+      muscle,
+      hardSets: week.get(muscle) ?? 0,
+      landmarks: landmarksFor(muscle),
+    }));
+  }, [allSessions, index, selected, profile]);
+
+  // Hypertrophy under-volume signal for the plateau breaker: a stall at adequate
+  // load may be an under-volume problem — suggest adding a set before deloading.
+  const underVolume = useMemo(() => {
+    if (!profile || profile.goal !== 'hypertrophy') return false;
+    return volumeRows.some((r) => r.hardSets < r.landmarks.mav && volumeState(r.hardSets, r.landmarks) !== 'over_mrv');
+  }, [profile, volumeRows]);
+
   // Plateau breaker (FEATURES.md #5): the engine flags a genuine stall on the
   // target; offer a choice rather than silently deloading. Resolved (or twice
   // ignored) cards stay hidden for the exercise.
@@ -507,6 +530,7 @@ export function Home() {
                 currentRange={repRangeForGoal(profile.goal, selected.is_compound)}
                 shiftedRange={shiftedRepRange(profile.goal, selected.is_compound)}
                 variants={variants}
+                underVolume={underVolume}
                 onChoose={resolvePlateau}
                 onDismiss={dismissPlateau}
               />
@@ -535,7 +559,7 @@ export function Home() {
           </div>
         </div>
       ) : (
-        <ExerciseDetail exercise={selected} profile={profile} sessions={detailSessions} />
+        <ExerciseDetail exercise={selected} profile={profile} sessions={detailSessions} volumeRows={volumeRows} />
       )}
 
       {pickerOpen && (

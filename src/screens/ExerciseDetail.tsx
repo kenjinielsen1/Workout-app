@@ -12,6 +12,7 @@ import type { LoadType } from '../lib/types';
 import { LineChart, type LinePoint } from '../components/LineChart';
 import { BarChart } from '../components/BarChart';
 import { SessionHistory } from '../components/SessionHistory';
+import { VolumeView, type VolumeRow } from '../components/VolumeView';
 import { formatE1RM, formatWeight, toDisplay, type WeightUnit } from '../lib/units';
 
 export interface DetailExercise {
@@ -28,6 +29,8 @@ interface ExerciseDetailProps {
   exercise: DetailExercise;
   profile: DetailProfile;
   sessions: StatSession[];
+  /** This week's per-muscle hard-set volume for this lift's muscles (VOLUME.md). */
+  volumeRows?: VolumeRow[];
 }
 
 const fmtDate = (iso: string) =>
@@ -44,7 +47,7 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub?: R
   );
 }
 
-export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailProps) {
+export function ExerciseDetail({ exercise, profile, sessions, volumeRows = [] }: ExerciseDetailProps) {
   const unit = profile.weight_unit ?? 'lb';
   const { summary, e1rmPoints, tonnagePoints, prs, rms, recent } = useMemo(() => {
     const summary = summarize(sessions, exercise, profile);
@@ -106,6 +109,8 @@ export function ExerciseDetail({ exercise, profile, sessions }: ExerciseDetailPr
         </div>
         <LineChart points={e1rmPoints} ariaLabel="Estimated 1RM over time" formatY={(n) => `${Math.round(n)}`} />
       </section>
+
+      {volumeRows.length > 0 && <VolumeView rows={volumeRows} />}
 
       {recent.length > 0 && (
         <section className="flex flex-col gap-2">

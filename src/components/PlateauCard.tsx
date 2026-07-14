@@ -11,11 +11,14 @@ interface Props {
   currentRange: { min: number; max: number };
   shiftedRange: { min: number; max: number };
   variants: VariantExercise[];
+  /** Hypertrophy stall at adequate load with volume below the sweet spot
+   *  (VOLUME.md): suggest adding a set before deloading. */
+  underVolume?: boolean;
   onChoose: (choice: PlateauChoice, variantId?: string) => void;
   onDismiss: () => void;
 }
 
-export function PlateauCard({ currentRange, shiftedRange, variants, onChoose, onDismiss }: Props) {
+export function PlateauCard({ currentRange, shiftedRange, variants, underVolume = false, onChoose, onDismiss }: Props) {
   return (
     <section
       aria-label="Plateau breaker"
@@ -38,6 +41,14 @@ export function PlateauCard({ currentRange, shiftedRange, variants, onChoose, on
           Later
         </button>
       </div>
+
+      {underVolume && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs leading-snug text-emerald-900 dark:border-emerald-700/50 dark:bg-emerald-950/30 dark:text-emerald-200">
+          <span className="font-semibold">Try more volume first.</span> Your weekly hard sets for
+          this muscle are below the sweet spot — adding a set is often the fix for a
+          hypertrophy stall, before backing off load.
+        </div>
+      )}
 
       <div className="flex flex-col gap-2">
         <button
