@@ -4,13 +4,14 @@
 // for the same muscle in the same week.
 
 import { correctedRIR, targetRIRForGoal } from './progression';
+import { volumeCounting } from './evidenceConfig';
 import type { Landmarks } from './volumeLandmarks';
 import type { Goal } from './types';
 
-/** A secondary muscle gets a fraction of a set toward its weekly volume. */
-export const SECONDARY_FRACTION = 0.5;
-/** How close to failure a working set must be to count as a stimulating set. */
-export const HARD_SET_RIR_MARGIN = 2;
+/** A secondary muscle gets a fraction of a set toward its weekly volume (config). */
+export const SECONDARY_FRACTION = volumeCounting().secondaryFraction;
+/** How close to failure a working set must be to count as a stimulating set (config). */
+export const HARD_SET_RIR_MARGIN = volumeCounting().hardSetRirMargin;
 
 export interface VolSet {
   reps: number;

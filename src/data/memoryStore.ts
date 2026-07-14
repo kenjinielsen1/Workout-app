@@ -21,6 +21,7 @@ import type {
   WorkoutCheckin,
 } from './domain';
 import { PROFILE_DEFAULTS } from './dbTypes';
+import { CONFIG_VERSION } from '../lib/evidenceConfig';
 import type { LogSetInput, SaveRecommendationInput, WorkoutStore } from './store';
 
 export const DEMO_USER_ID = 'demo-user';
@@ -197,6 +198,7 @@ export class InMemoryWorkoutStore implements WorkoutStore {
       accepted: null,
       actual_outcome: null,
       plateau_choice: null,
+      config_version: CONFIG_VERSION,
       ...input,
     });
     return id;

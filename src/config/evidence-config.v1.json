@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "updated": "2026-01-15",
+  "parameters": {
+    "rir_experience_bias": {
+      "value": [
+        { "under_months": 6, "bias": 3.5 },
+        { "under_months": 12, "bias": 2.5 },
+        { "under_months": 24, "bias": 1.8 },
+        { "under_months": 48, "bias": 1.2 },
+        { "under_months": null, "bias": 1.0 }
+      ],
+      "source": "Steele et al. 2017 (n=141)",
+      "note": "RIR underprediction scales inversely with training experience (months)",
+      "confidence": "moderate"
+    },
+    "rir_rep_penalty": {
+      "value": { "per_rep": 0.15, "above_reps": 12 },
+      "source": "Zourdos et al. 2016; Hackett et al. 2012",
+      "note": "RIR accuracy degrades on high-rep sets",
+      "confidence": "moderate"
+    },
+    "rir_distance_penalty": {
+      "value": { "penalty": 0.5, "at_or_above_rir": 3 },
+      "source": "Halperin et al. 2022",
+      "note": "reports 3+ from failure are systematically further than stated",
+      "confidence": "moderate"
+    },
+    "proximity_target_rir": {
+      "value": {
+        "hypertrophy": [1, 3],
+        "strength": [3, 5],
+        "endurance": [2, 4]
+      },
+      "source": "Refalo et al. 2024 (hypertrophy); Robinson et al. 2024 meta-regression, 67 studies (strength)",
+      "note": "productive proximity-to-failure window per goal; midpoint is the target RIR",
+      "confidence": "high"
+    },
+    "rep_ranges": {
+      "value": {
+        "strength": { "compound": [3, 6], "isolation": [6, 10] },
+        "hypertrophy": { "compound": [6, 10], "isolation": [8, 15] },
+        "endurance": { "compound": [12, 15], "isolation": [15, 20] }
+      },
+      "source": "Schoenfeld et al. 2021 loading review",
+      "note": "effective rep ranges by goal and movement type",
+      "confidence": "high"
+    },
+    "readiness_signal_weights": {
+      "value": { "s1": 0.3, "s2": 0.25, "s3": 0.2, "s4": 0.15, "s5": 0.1 },
+      "source": "literature-prior synthesis (PROGRESSION.md Part 2)",
+      "note": "relative weights of the five base readiness signals; sum to 1",
+      "confidence": "limited"
+    },
+    "readiness_checkin_signal": {
+      "value": { "weight": 0.15, "positive_cap": 0.5, "sleep": 0.4, "soreness": 0.35, "energy": 0.25 },
+      "source": "fatigue-management synthesis",
+      "note": "daily check-in S6 weight (asymmetric positive cap) and its sleep/soreness/energy sub-weights",
+      "confidence": "limited"
+    },
+    "readiness_thresholds": {
+      "value": { "increase": 0.6, "add_rep": 0.25, "repeat": -0.2, "flag": -0.5 },
+      "source": "autoregulation synthesis (PROGRESSION.md Part 2)",
+      "note": "composite-readiness band boundaries for the decision table",
+      "confidence": "limited"
+    },
+    "expected_weekly_gain": {
+      "value": [
+        { "under_months": 6, "fraction": 0.02 },
+        { "under_months": 24, "fraction": 0.01 },
+        { "under_months": 48, "fraction": 0.004 },
+        { "under_months": null, "fraction": 0.002 }
+      ],
+      "source": "Gonzalez-Badillo et al.; training-age progression norms",
+      "note": "expected weekly e1RM gain as a fraction, by training age",
+      "confidence": "moderate"
+    },
+    "acwr_thresholds": {
+      "value": { "low": 0.8, "elevated": 1.3, "veto": 1.5 },
+      "source": "Gabbett 2016 acute:chronic workload ratio",
+      "note": "sweet spot ~0.8-1.3; >1.5 injury-risk zone (hard veto)",
+      "confidence": "moderate"
+    },
+    "deload_triggers": {
+      "value": { "factor": 0.9, "force_after_sessions": 24 },
+      "source": "periodization synthesis",
+      "note": "deload = ~10% back-off; force a deload week after this many sessions without one",
+      "confidence": "limited"
+    },
+    "fatigue_masking": {
+      "value": { "acwr_over": 1.3, "rpe_slope_over": 0.2 },
+      "source": "PROGRESSION.md Part 4 synthesis",
+      "note": "flat e1RM + elevated ACWR + rising RPE = masked fitness → cut volume, not load",
+      "confidence": "limited"
+    },
+    "increase_vetoes": {
+      "value": { "min_sessions": 3, "detrain_days": 14 },
+      "source": "learning-phase + detraining synthesis",
+      "note": "block increases with <3 sessions logged, or >14 days off",
+      "confidence": "limited"
+    },
+    "safety_caps": {
+      "value": { "max_e1rm_fraction": 1.05, "max_increase_pct": 0.1, "max_increase_lb": 10 },
+      "source": "safety-rail synthesis (SPEC.md)",
+      "note": "never exceed 105% of best historical e1RM; cap a single jump at min(10%, 10 lb)",
+      "confidence": "moderate"
+    },
+    "weekly_e1rm_increase_cap": {
+      "value": { "novice_pct": 0.05, "experienced_pct": 0.02, "experienced_after_months": 24 },
+      "source": "training-age progression-rate norms",
+      "note": "max weekly e1RM increase; novices adapt faster than experienced lifters",
+      "confidence": "moderate"
+    },
+    "ml_blend": {
+      "value": { "alpha_max": 0.8, "sessions_denom": 20 },
+      "source": "cold-start blending heuristic",
+      "note": "alpha = min(alpha_max, sessions/sessions_denom); how fast ML earns trust",
+      "confidence": "limited"
+    },
+    "volume_counting": {
+      "value": { "secondary_fraction": 0.5, "hard_set_rir_margin": 2 },
+      "source": "fractional set-counting convention",
+      "note": "secondary muscles get a fraction of a set; hard set = within target RIR + margin",
+      "confidence": "moderate"
+    },
+    "volume_landmarks_default": {
+      "value": { "mv": 6, "mev": 9, "mav": 16, "mrv": 22 },
+      "source": "Israetel/RP synthesis; refine per user",
+      "note": "sets per muscle per week; large individual variation",
+      "confidence": "moderate"
+    },
+    "volume_landmarks_overrides": {
+      "value": {
+        "side_delts": { "mev": 10, "mav": 19, "mrv": 26 },
+        "rear_delts": { "mev": 10, "mav": 19, "mrv": 26 },
+        "calves": { "mev": 8, "mav": 18, "mrv": 26 },
+        "forearms": { "mev": 8, "mav": 16, "mrv": 25 },
+        "abs": { "mev": 8, "mav": 18, "mrv": 25 },
+        "erectors": { "mev": 6, "mav": 10, "mrv": 14 }
+      },
+      "source": "muscle-specific recovery synthesis",
+      "note": "fast-recovering small muscles tolerate more; lower back less",
+      "confidence": "limited"
+    },
+    "volume_calibration_alpha": {
+      "value": 0.25,
+      "source": "EWMA smoothing choice",
+      "note": "how fast a user's MEV/MAV/MRV estimates move toward observed tolerance",
+      "confidence": "limited"
+    }
+  }
+}

@@ -11,27 +11,32 @@
 
 import { adjustedE1RM, e1RM, effectiveLoad } from './effectiveLoad';
 import { equipmentIncrement, snapToLoadable } from './rounding';
+import * as cfg from './evidenceConfig';
 import type { Equipment, Goal, LoadType, MovementPattern } from './types';
 
-// --- tunables (priors; ML replaces these later, never the structure) --------
-export const SIGNAL_WEIGHTS = { s1: 0.3, s2: 0.25, s3: 0.2, s4: 0.15, s5: 0.1 } as const;
-// FEATURES.md #2 — daily check-in signal S6. When a check-in exists it takes
-// weight 0.15 and the five base signals are scaled by 0.85 (proportional
-// rebalance, keeps the composite in [-1,1]); a skipped check-in leaves the base
-// composite untouched, so the engine behaves exactly as before.
-export const S6_WEIGHT = 0.15;
-const BASE_SCALE = 1 - S6_WEIGHT; // 0.85
+// --- tunables ---------------------------------------------------------------
+// Every value here is READ from the versioned evidence config (EVIDENCE_CONFIG.md)
+// — no research-derived literal is inlined. Bumping the config changes these
+// without touching engine logic. Structural constants (windows, not evidence)
+// stay in code.
+export const SIGNAL_WEIGHTS = cfg.signalWeights();
+// FEATURES.md #2 — daily check-in signal S6. When a check-in exists it takes its
+// configured weight and the five base signals are scaled by (1 − weight)
+// (proportional rebalance, keeps the composite in [-1,1]); a skipped check-in
+// leaves the base composite untouched, so the engine behaves exactly as before.
+export const S6_WEIGHT = cfg.checkinSignal().weight;
+const BASE_SCALE = 1 - S6_WEIGHT;
 // Asymmetry: a wrecked day is strong evidence NOT to push; a great day is weak
-// evidence you should. Cap the positive contribution to half the negative.
-export const S6_POSITIVE_CAP = 0.5;
-export const READINESS_INCREASE = 0.6;
-export const READINESS_ADD_REP = 0.25;
-export const READINESS_REPEAT = -0.2;
-export const READINESS_FLAG = -0.5;
-const DELOAD_FACTOR = 0.9;
-const E1RM_TREND_WINDOW = 4;
-const MAX_E1RM_FRACTION = 1.05; // never exceed 105% of best historical e1RM
-const DELOAD_FORCE_SESSIONS = 24;
+// evidence you should. The config caps the positive contribution below the negative.
+export const S6_POSITIVE_CAP = cfg.checkinSignal().positiveCap;
+export const READINESS_INCREASE = cfg.readinessThresholds().increase;
+export const READINESS_ADD_REP = cfg.readinessThresholds().addRep;
+export const READINESS_REPEAT = cfg.readinessThresholds().repeat;
+export const READINESS_FLAG = cfg.readinessThresholds().flag;
+const DELOAD_FACTOR = cfg.deloadTriggers().factor;
+const E1RM_TREND_WINDOW = 4; // structural analysis window, not an evidence value
+const MAX_E1RM_FRACTION = cfg.safetyCaps().maxE1rmFraction;
+const DELOAD_FORCE_SESSIONS = cfg.deloadTriggers().forceAfterSessions;
 
 const clamp = (v: number, lo = -1, hi = 1) => Math.max(lo, Math.min(hi, v));
 
@@ -144,36 +149,23 @@ export function correctedRIR(
   user: Pick<ProgProfile, 'training_age_months' | 'rir_calibration_offset'>,
   reps: number,
 ): number {
-  const months = user.training_age_months;
-  const experienceBias =
-    months < 6 ? 3.5 : months < 12 ? 2.5 : months < 24 ? 1.8 : months < 48 ? 1.2 : 1.0;
-  const repPenalty = reps > 12 ? 0.15 * (reps - 12) : 0;
-  const distancePenalty = reported >= 3 ? 0.5 : 0;
+  const experienceBias = cfg.experienceBias(user.training_age_months);
+  const rp = cfg.repPenalty();
+  const repPenalty = reps > rp.aboveReps ? rp.perRep * (reps - rp.aboveReps) : 0;
+  const dp = cfg.distancePenalty();
+  const distancePenalty = reported >= dp.atOrAboveRir ? dp.penalty : 0;
   const personalOffset = user.rir_calibration_offset ?? 0;
   return reported + experienceBias + repPenalty + distancePenalty - personalOffset;
 }
 
-// Part 3 — goal-specific proximity target (midpoint of the range) and rep gates.
+// Part 3 — goal-specific proximity target (midpoint of the config window) and rep
+// gates. Both are read from the evidence config.
 export function targetRIRForGoal(goal: Goal): number {
-  switch (goal) {
-    case 'hypertrophy':
-      return 2; // 1–3
-    case 'strength':
-      return 4; // 3–5
-    case 'endurance':
-      return 3; // 2–4
-  }
+  return cfg.targetRIR(goal);
 }
 
 export function repRangeForGoal(goal: Goal, isCompound: boolean): { min: number; max: number } {
-  switch (goal) {
-    case 'strength':
-      return isCompound ? { min: 3, max: 6 } : { min: 6, max: 10 };
-    case 'hypertrophy':
-      return isCompound ? { min: 6, max: 10 } : { min: 8, max: 15 };
-    case 'endurance':
-      return isCompound ? { min: 12, max: 15 } : { min: 15, max: 20 };
-  }
+  return cfg.repRange(goal, isCompound);
 }
 
 /** Plateau-breaker rep-range shift (FEATURES.md #5): move to a different rep
@@ -184,10 +176,9 @@ export function shiftedRepRange(goal: Goal, isCompound: boolean): { min: number;
   return repRangeForGoal(next, isCompound);
 }
 
-// Part 2 — expected weekly e1RM gain as a FRACTION, by training age.
+// Part 2 — expected weekly e1RM gain as a FRACTION, by training age (config).
 export function expectedWeeklyGain(user: ProgProfile): number {
-  const m = user.training_age_months;
-  return m < 6 ? 0.02 : m < 24 ? 0.01 : m < 48 ? 0.004 : 0.002;
+  return cfg.expectedWeeklyGain(user.training_age_months);
 }
 
 // --- helpers ----------------------------------------------------------------
@@ -296,7 +287,8 @@ export function readinessSignals(ctx: ProgContext): Signals {
 
   // S4 — fatigue state (inverted ACWR).
   const acwr = ctx.acwr;
-  const s4 = acwr < 0.8 ? 0.5 : acwr < 1.3 ? 1.0 : acwr < 1.5 ? 0.0 : -1.0;
+  const a = cfg.acwrThresholds();
+  const s4 = acwr < a.low ? 0.5 : acwr < a.elevated ? 1.0 : acwr < a.veto ? 0.0 : -1.0;
 
   // S5 — session RPE trend (inverted).
   const s5 = clamp(-rpeSlopeLast4(history) / 0.5);
@@ -315,13 +307,15 @@ export function dailyReadiness(c: DailyCheckin | null | undefined): number {
   const sleep = (c.sleep_quality - 3) / 2; // -1..1
   const soreness = (3 - c.soreness) / 2; // inverted: sore → negative
   const energy = (c.energy - 3) / 2;
-  return clamp(0.4 * sleep + 0.35 * soreness + 0.25 * energy, -1, 1);
+  const w = cfg.checkinSignal();
+  return clamp(w.sleep * sleep + w.soreness * soreness + w.energy * energy, -1, 1);
 }
 
 /**
  * Composite readiness. Without a check-in (`hasCheckin` false) this is the
- * original five-signal blend, unchanged. With one, the base is scaled by 0.85
- * and S6 contributes 0.15 — a proportional rebalance that keeps the range.
+ * original five-signal blend, unchanged. With one, the base is scaled by
+ * (1 − S6 weight) and S6 contributes its configured weight — a proportional
+ * rebalance that keeps the range. Weights come from the evidence config.
  */
 export function compositeReadiness(sig: Signals, hasCheckin = false): number {
   const base =
@@ -349,9 +343,11 @@ function blockingVetoes(
 ): { blocks: string[]; forceDeload: boolean } {
   const { user } = ctx;
   const blocks: string[] = [];
-  if (ctx.acwr > 1.5) blocks.push('ACWR > 1.5 (injury-risk fatigue)');
-  if (ctx.sessionsThisExercise < 3) blocks.push('fewer than 3 sessions logged (learning phase)');
-  if (ctx.daysSinceLast > 14) blocks.push('over 14 days since last session (detraining)');
+  const a = cfg.acwrThresholds();
+  const v = cfg.increaseVetoes();
+  if (ctx.acwr > a.veto) blocks.push(`ACWR > ${a.veto} (injury-risk fatigue)`);
+  if (ctx.sessionsThisExercise < v.minSessions) blocks.push(`fewer than ${v.minSessions} sessions logged (learning phase)`);
+  if (ctx.daysSinceLast > v.detrainDays) blocks.push(`over ${v.detrainDays} days since last session (detraining)`);
   if (ws.some((s) => s.failed)) blocks.push('a set was logged to failure');
   const lastSet = ws[ws.length - 1]!;
   if (correctedRIR(lastSet.rir ?? 0, user, lastSet.reps) < 0.5)
@@ -364,7 +360,7 @@ function blockingVetoes(
 // fatigue and flat RPE (distinct from fatigue-masking, which is flat e1RM with
 // HIGH fatigue → volume cut). Feature 5 (plateau breaker) reuses this.
 export function isGenuineStall(sig: Signals, ctx: ProgContext, rpeSlope: number): boolean {
-  return sig.s2 <= 0 && ctx.acwr <= 1.3 && Math.abs(rpeSlope) <= 0.2;
+  return sig.s2 <= 0 && ctx.acwr <= cfg.acwrThresholds().elevated && Math.abs(rpeSlope) <= cfg.fatigueMasking().rpeSlopeOver;
 }
 
 /** Plain-English reasons a hold/deload fired, naming the signals responsible
@@ -376,7 +372,7 @@ export function readinessReasons(sig: Signals, ctx: ProgContext): string[] {
   if (sig.s5 < 0) out.push('sessions have been feeling harder (RPE trending up)');
   if (sig.s1 < 0) out.push('your last top set had little left in reserve');
   if (ctx.dailyReadiness != null && ctx.dailyReadiness < 0) out.push("today's readiness check-in was rough");
-  if (ctx.daysSinceLast >= 14) out.push(`you've had ${Math.round(ctx.daysSinceLast)} days off (some detraining)`);
+  if (ctx.daysSinceLast >= cfg.increaseVetoes().detrainDays) out.push(`you've had ${Math.round(ctx.daysSinceLast)} days off (some detraining)`);
   return out;
 }
 
@@ -447,7 +443,8 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
   }
 
   // Part 4 — fatigue-masking: adapting but fatigue-suppressed → cut volume, hold load.
-  if (signals.s2 <= 0 && ctx.acwr > 1.3 && rpeSlope > 0.2) {
+  const fm = cfg.fatigueMasking();
+  if (signals.s2 <= 0 && ctx.acwr > fm.acwrOver && rpeSlope > fm.rpeSlopeOver) {
     const nextSets = Math.max(1, sets - 1);
     return build(
       'reduce_volume',
@@ -496,7 +493,8 @@ export function recommendProgression(ctx: ProgContext): ProgRecommendation {
   switch (action) {
     case 'increase_load': {
       // Magnitude cap (#9): the smaller of 10% and 10 lb.
-      const step = Math.min(loadStep(ex, user), 0.1 * baseWeight, 10);
+      const caps = cfg.safetyCaps();
+      const step = Math.min(loadStep(ex, user), caps.maxIncreasePct * baseWeight, caps.maxIncreaseLb);
       let w = snapToLoadable(baseWeight + step, ex, user, 'floor');
       // 105% best-e1RM cap (#6), evaluated at the reset (bottom-of-range) reps.
       const maxEffective = (MAX_E1RM_FRACTION * ctx.bestHistoricalE1RM) / (1 + range.min / 30);

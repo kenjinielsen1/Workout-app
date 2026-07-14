@@ -1,4 +1,5 @@
 // Supabase-backed WorkoutStore. A thin shell over the pure mappers; RLS on the
+import { CONFIG_VERSION } from '../lib/evidenceConfig';
 // server scopes every query to the signed-in user, so these methods don't filter
 // by user_id themselves (except where a query spans tables).
 //
@@ -213,7 +214,7 @@ export class SupabaseWorkoutStore implements WorkoutStore {
   async saveRecommendation(input: SaveRecommendationInput): Promise<string> {
     const { data, error } = await this.db
       .from('recommendations')
-      .insert(input)
+      .insert({ ...input, config_version: CONFIG_VERSION })
       .select('id')
       .single();
     if (error) throw error;

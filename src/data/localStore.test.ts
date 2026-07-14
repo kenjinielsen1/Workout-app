@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LocalFirstStore, DEMO_LOCAL_USER } from './localStore';
 import type { RemoteSync } from './remoteSync';
+import { CONFIG_VERSION } from '../lib/evidenceConfig';
 import type { RemoteSource } from './remoteSource';
 import { seedExercises } from './seedCatalog';
 import type { ExerciseOverride, LoggedSet, OutcomeJson, Profile, Recommendation, Workout } from './domain';
@@ -109,6 +110,19 @@ describe('per-machine overrides (INCREMENTS.md)', () => {
     await store.setOverride(U, 'a', { weight_increment_lb: 5, weight_stack_min_lb: null });
     await store.setOverride('other-user', 'b', { weight_increment_lb: 9, weight_stack_min_lb: null });
     expect((await store.getOverrides(U)).map((o) => o.exercise_id)).toEqual(['a']);
+  });
+});
+
+describe('evidence-config version stamping (EVIDENCE_CONFIG.md)', () => {
+  it('records the active config version on every recommendation', async () => {
+    const remote = new MockRemote();
+    const store = new LocalFirstStore({ dbName: dbName(), remote });
+    const id = await store.saveRecommendation({
+      user_id: U, exercise_id: 'barbell-back-squat', target_weight_lb: 225, target_reps: 5,
+      target_sets: 3, confidence: 0.5, rationale: 'increase', alpha: 0, rule_pred_e1rm: 260, ml_pred_e1rm: null,
+    });
+    await store.flush();
+    expect(remote.recs.get(id)?.config_version).toBe(CONFIG_VERSION);
   });
 });
 

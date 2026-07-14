@@ -5,6 +5,7 @@
 
 import { volumeState, type VolumeState } from '../lib/volume';
 import type { Landmarks } from '../lib/volumeLandmarks';
+import { paramConfidence } from '../lib/evidenceConfig';
 
 export interface VolumeRow {
   muscle: string;
@@ -86,6 +87,11 @@ export function VolumeView({ rows, title = "This week's volume" }: { rows: Volum
       <p className="text-[11px] leading-snug text-neutral-400">
         The shaded band is the productive range. More isn't better past it —
         MRV is a ceiling to respect, not a target to fill.
+      </p>
+      {/* Honest-uncertainty: reflect the evidence strength behind these bands. */}
+      <p className="text-[11px] leading-snug text-neutral-400">
+        Bands are <span className="font-medium">{paramConfidence('volume_landmarks_default')}</span>-confidence
+        population priors — they shift toward your own tolerance as you train.
       </p>
     </section>
   );

@@ -8,7 +8,15 @@
 //   MAV  adaptive sweet spot      ~10–20
 //   MRV  max recoverable          ~20–24  (beyond → junk / regression)
 
-export const LANDMARKS_VERSION = 1;
+import {
+  CONFIG_VERSION,
+  volumeCalibrationAlpha,
+  volumeLandmarkDefault,
+  volumeLandmarkOverrides,
+} from './evidenceConfig';
+
+/** Which evidence-config version these landmark priors came from. */
+export const LANDMARKS_VERSION = CONFIG_VERSION;
 
 export interface Landmarks {
   mv: number;
@@ -17,22 +25,10 @@ export interface Landmarks {
   mrv: number;
 }
 
-const DEFAULT: Landmarks = { mv: 6, mev: 9, mav: 16, mrv: 22 };
-
-// Per-muscle deviations from the default prior. Small muscles that recover fast
-// (side/rear delts, calves) tolerate more; the lower back (erectors) less.
-const OVERRIDES: Record<string, Partial<Landmarks>> = {
-  side_delts: { mev: 10, mav: 19, mrv: 26 },
-  rear_delts: { mev: 10, mav: 19, mrv: 26 },
-  calves: { mev: 8, mav: 18, mrv: 26 },
-  forearms: { mev: 8, mav: 16, mrv: 25 },
-  abs: { mev: 8, mav: 18, mrv: 25 },
-  erectors: { mev: 6, mav: 10, mrv: 14 }, // lower back — recovers slowly
-};
-
-/** Population-prior landmarks for a muscle (fine-grained catalog name). */
+/** Population-prior landmarks for a muscle (fine-grained catalog name), read from
+ *  the evidence config: the default band plus any per-muscle deviation. */
 export function landmarksFor(muscle: string): Landmarks {
-  return { ...DEFAULT, ...(OVERRIDES[muscle] ?? {}) };
+  return { ...volumeLandmarkDefault(), ...(volumeLandmarkOverrides()[muscle] ?? {}) };
 }
 
 /**
@@ -60,7 +56,7 @@ export function updateMRVEstimate(
   observedVolume: number,
   performedWell: boolean,
 ): number {
-  const ALPHA = 0.25;
+  const ALPHA = volumeCalibrationAlpha();
   if (performedWell && observedVolume >= priorMRV) {
     // Held performance at/above the ceiling → the true ceiling is higher.
     return Number((priorMRV + ALPHA * (observedVolume + 1 - priorMRV)).toFixed(3));

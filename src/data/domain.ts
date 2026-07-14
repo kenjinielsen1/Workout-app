@@ -147,6 +147,8 @@ export interface Recommendation {
   actual_outcome: OutcomeJson | null;
   /** Plateau-breaker resolution the user picked, if any (FEATURES.md #5). */
   plateau_choice: PlateauChoice | null;
+  /** Evidence-config version that produced this recommendation (EVIDENCE_CONFIG.md). */
+  config_version: number | null;
 }
 
 /** The three plateau-breaker resolutions (FEATURES.md #5). */

@@ -53,7 +53,7 @@ export class SupabaseRemoteSync implements RemoteSync {
       confidence: r.confidence, rationale: r.rationale, alpha: r.alpha,
       rule_pred_e1rm: r.rule_pred_e1rm, ml_pred_e1rm: r.ml_pred_e1rm,
       accepted: r.accepted, actual_outcome: r.actual_outcome,
-      plateau_choice: r.plateau_choice,
+      plateau_choice: r.plateau_choice, config_version: r.config_version,
     });
   }
 

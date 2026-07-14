@@ -31,4 +31,10 @@ describe('VolumeView (VOLUME.md — information, not a target to max)', () => {
     render(<VolumeView rows={[{ muscle: 'pectorals', hardSets: 5, landmarks: chest }]} />);
     expect(screen.getByText(/below growth range/i)).toBeInTheDocument();
   });
+
+  it('reflects the evidence confidence behind the landmark bands (EVIDENCE_CONFIG.md)', () => {
+    render(<VolumeView rows={[{ muscle: 'pectorals', hardSets: 12, landmarks: chest }]} />);
+    expect(screen.getByText(/moderate/)).toBeInTheDocument(); // confidence surfaced to the user
+    expect(screen.getByText(/population priors/i)).toBeInTheDocument();
+  });
 });

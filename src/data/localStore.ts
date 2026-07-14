@@ -11,6 +11,7 @@ import type { SessionTarget } from '../lib/target';
 import { openPODB, type PODatabase, type SyncOp } from './idb';
 import { groupAllSessions, groupSetsIntoSessions } from './mappers';
 import { PROFILE_DEFAULTS } from './dbTypes';
+import { CONFIG_VERSION } from '../lib/evidenceConfig';
 import { demoHistory, seedExercises } from './seedCatalog';
 import type {
   AllSession, CreateExerciseInput, Exercise, ExerciseOverride, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, PlateauChoice, Workout, WorkoutCheckin,
@@ -239,7 +240,7 @@ export class LocalFirstStore implements WorkoutStore {
   async saveRecommendation(input: SaveRecommendationInput): Promise<string> {
     await this.ready;
     const rec: Recommendation = {
-      id: uuid(), generated_at: new Date().toISOString(), accepted: null, actual_outcome: null, plateau_choice: null, ...input,
+      id: uuid(), generated_at: new Date().toISOString(), accepted: null, actual_outcome: null, plateau_choice: null, config_version: CONFIG_VERSION, ...input,
     };
     await this.db.put('recommendations', rec);
     await this.enqueue({ kind: 'recommendation', payload: rec });

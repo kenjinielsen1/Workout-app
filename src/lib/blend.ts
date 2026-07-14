@@ -12,6 +12,7 @@
 
 import { e1RM, effectiveLoad } from './effectiveLoad';
 import { snapToLoadable } from './rounding';
+import * as cfg from './evidenceConfig';
 import type { ProgRecommendation } from './progression';
 import { toSessionTarget } from './progContext';
 import type { SessionTarget } from './target';
@@ -87,11 +88,13 @@ const impliedE1RM = (logged: number, reps: number, ex: RailExercise, user: RailP
 const loggedForE1RM = (target_e1rm: number, reps: number, ex: RailExercise, user: RailProfile) =>
   loggedFromEffective(target_e1rm / (1 + reps / 30), ex, user);
 
-/** α = min(0.8, sessions/20), forced to 0 during cold start, and clamped by the
- *  per-user cap the nightly job sets (0 when ML underperforms the rules). */
+/** α = min(alpha_max, sessions/sessions_denom), forced to 0 during cold start, and
+ *  clamped by the per-user cap the nightly job sets (0 when ML underperforms). The
+ *  blend curve is read from the evidence config. */
 export function blendAlpha(sessionsLogged: number, coldStart: boolean, alphaCap = 1): number {
   if (coldStart) return 0;
-  return Math.min(0.8, sessionsLogged / 20, Math.max(0, alphaCap));
+  const b = cfg.mlBlend();
+  return Math.min(b.alphaMax, sessionsLogged / b.sessionsDenom, Math.max(0, alphaCap));
 }
 
 export function blendE1RM(
@@ -117,26 +120,28 @@ export function applySafetyRails(
   const { exercise: ex, profile: user, targetReps: reps } = rail;
   const applied: string[] = [];
   let load = candidateLoad;
+  const caps = cfg.safetyCaps();
 
-  // 1. Session-to-session increase: the smaller of 10% and 10 lb.
-  const cap1 = rail.priorTopWeight + Math.min(0.1 * rail.priorTopWeight, 10);
+  // 1. Session-to-session increase: the smaller of the config pct and abs cap.
+  const cap1 = rail.priorTopWeight + Math.min(caps.maxIncreasePct * rail.priorTopWeight, caps.maxIncreaseLb);
   if (load > cap1) {
     load = cap1;
-    applied.push('capped to +10%/10 lb over last session');
+    applied.push(`capped to +${caps.maxIncreasePct * 100}%/${caps.maxIncreaseLb} lb over last session`);
   }
 
-  // 2. Never exceed 105% of best historical e1RM.
+  // 2. Never exceed the configured fraction of best historical e1RM.
   if (rail.bestHistoricalE1RM > 0) {
-    const cap2 = loggedForE1RM(1.05 * rail.bestHistoricalE1RM, reps, ex, user);
+    const cap2 = loggedForE1RM(caps.maxE1rmFraction * rail.bestHistoricalE1RM, reps, ex, user);
     if (load > cap2) {
       load = cap2;
-      applied.push('capped at 105% of best e1RM');
+      applied.push(`capped at ${Math.round(caps.maxE1rmFraction * 100)}% of best e1RM`);
     }
   }
 
-  // 3. Weekly e1RM increase: 5% (≤24mo training age) / 2% (>24mo).
+  // 3. Weekly e1RM increase cap — novices adapt faster (config, by training age).
   if (rail.baselineWeeklyE1RM && rail.baselineWeeklyE1RM > 0) {
-    const pct = rail.trainingAgeMonths > 24 ? 0.02 : 0.05;
+    const wc = cfg.weeklyIncreaseCap();
+    const pct = rail.trainingAgeMonths > wc.experiencedAfterMonths ? wc.experiencedPct : wc.novicePct;
     const cap3 = loggedForE1RM(rail.baselineWeeklyE1RM * (1 + pct), reps, ex, user);
     if (load > cap3) {
       load = cap3;
@@ -145,9 +150,9 @@ export function applySafetyRails(
   }
 
   // 4. ACWR over the injury threshold: hold, don't increase.
-  if (rail.acwr > 1.5 && load > rail.priorTopWeight) {
+  if (rail.acwr > cfg.acwrThresholds().veto && load > rail.priorTopWeight) {
     load = rail.priorTopWeight;
-    applied.push('held — ACWR over 1.5');
+    applied.push(`held — ACWR over ${cfg.acwrThresholds().veto}`);
   }
 
   // An increase must never round down below the current working weight.
