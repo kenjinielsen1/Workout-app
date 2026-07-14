@@ -6,8 +6,10 @@
 // supplies the ACWR / fatigue context that engine needs. The shape it returns is
 // exactly what the real recommendation will, so swapping is a one-line change.
 
-import { repRangeForGoal } from './progression';
-import type { Equipment, Goal } from './types';
+import { repRangeForGoal, targetRIRForGoal } from './progression';
+import { e1RM, effectiveLoad, loggedFromEffective } from './effectiveLoad';
+import { snapToLoadable } from './rounding';
+import type { Equipment, Exercise, Goal, Profile } from './types';
 
 export interface SessionTarget {
   target_weight_lb: number;
@@ -74,5 +76,42 @@ export function deriveInitialTarget(
     target_reps: startingReps,
     target_sets: 3,
     rationale: `First time logging this lift — pick a weight you can control for ${startingReps} reps, the bottom of your ${goal} range.`,
+  };
+}
+
+type SeedExercise = Pick<
+  Exercise,
+  'equipment' | 'load_type' | 'default_increment_lb' | 'weight_increment_lb' | 'weight_stack_min_lb'
+> & { is_compound: boolean };
+type SeedProfile = Pick<Profile, 'bodyweight_lb' | 'has_micro_plates' | 'dumbbell_increment_lb' | 'plate_system'>;
+
+/**
+ * Cold-start seed (audit fix #5): turn a recent set the user *remembers* into a
+ * loadable starting prescription, so a brand-new exercise doesn't open on the
+ * crude equipment default (an empty 45-lb bar for a 315-lb squatter).
+ *
+ * Report → e1RM (Epley on effective load) → working load that leaves the goal's
+ * target RIR in reserve at the bottom of the rep range → back to logged weight →
+ * snapped to the loadable grid. This is only a prescription: it is NEVER written
+ * as a logged set. The user's first real set replaces it with true history.
+ */
+export function seedTargetFromRepMax(
+  reported: { weight_lb: number; reps: number },
+  exercise: SeedExercise,
+  user: SeedProfile,
+  goal: Goal,
+): SessionTarget {
+  const { min: startingReps } = repRangeForGoal(goal, exercise.is_compound);
+  const rir = targetRIRForGoal(goal);
+  const reportedE1RM = e1RM(effectiveLoad(reported, exercise, user), reported.reps);
+  // Working load that leaves `rir` reps in reserve at the starting rep count.
+  const targetEffective = reportedE1RM / (1 + (startingReps + rir) / 30);
+  const logged = loggedFromEffective(targetEffective, exercise, user);
+  const weight = snapToLoadable(logged, exercise, user, 'nearest');
+  return {
+    target_weight_lb: weight,
+    target_reps: startingReps,
+    target_sets: 3,
+    rationale: `Estimated from ${reported.weight_lb} × ${reported.reps}. This is a starting point, not logged history — your first real set replaces it.`,
   };
 }

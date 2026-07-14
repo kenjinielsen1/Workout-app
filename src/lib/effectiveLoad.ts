@@ -36,6 +36,29 @@ export function effectiveLoad(
   }
 }
 
+/** Inverse of effectiveLoad: from on-the-body load back to a logged weight (the
+ *  number the user enters). Used when we compute a target in effective terms and
+ *  need to show/store it as logged weight. */
+export function loggedFromEffective(
+  effective_lb: number,
+  ex: Pick<Exercise, 'load_type'>,
+  user: Pick<Profile, 'bodyweight_lb'>,
+): number {
+  switch (ex.load_type) {
+    case 'total':
+      return effective_lb;
+    case 'per_hand':
+    case 'per_side':
+      return effective_lb / 2;
+    case 'bodyweight_plus':
+      return effective_lb - user.bodyweight_lb;
+    default: {
+      const _never: never = ex.load_type;
+      throw new Error(`Unhandled load_type: ${String(_never)}`);
+    }
+  }
+}
+
 /** Epley e1RM from raw achievable load. Feed it effectiveLoad() output, not weight_lb. */
 export function e1RM(effective_lb: number, reps: number): number {
   return effective_lb * (1 + reps / 30);

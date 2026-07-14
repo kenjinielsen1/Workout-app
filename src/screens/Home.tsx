@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { useStore } from '../data/StoreProvider';
 import type { AllSession, CreateExerciseInput, Exercise, ExerciseOverride, Profile } from '../data/domain';
-import { deriveInitialTarget, type SessionTarget } from '../lib/target';
+import { deriveInitialTarget, seedTargetFromRepMax, type SessionTarget } from '../lib/target';
 import { exerciseFeatures, recommendTarget, sessionsForExercise } from '../lib/recommend';
 import { isMLConfigured, predict } from '../lib/mlClient';
 import type { FinalTarget, MLPrediction } from '../lib/blend';
@@ -42,6 +42,7 @@ import { BalanceCard } from '../components/BalanceCard';
 import { SafetyNotice } from '../components/SafetyNotice';
 import { SafetyOnboarding } from '../components/SafetyOnboarding';
 import { RirCalibrationPrompt } from '../components/RirCalibrationPrompt';
+import { ColdStartPrompt } from '../components/ColdStartPrompt';
 import type { VolumeRow } from '../components/VolumeView';
 import type { PlateauChoice } from '../data/domain';
 import { Settings } from './Settings';
@@ -221,6 +222,9 @@ export function Home() {
           : recommendTarget(all, ex, index, p, null, p.ml_alpha_cap, readinessValue, plannedDeload);
       const shown = fresh ?? deriveInitialTarget(all.filter((s) => s.exercise_id === exId), ex, p.goal);
       setTarget(shown);
+      // Cold start: no real history → the shown number is a crude equipment default.
+      // Offer a one-time seed from a set the user remembers (audit fix #5).
+      setColdStart(!fresh);
 
       if (fresh) {
         // Local write + enqueue sync; never awaits the network.
@@ -561,6 +565,30 @@ export function Home() {
     [store, userId, profile],
   );
 
+  // Cold-start seeding (audit fix #5): first open of an exercise with no history.
+  // Offer to seed the starting weight from a set the user remembers, instead of
+  // the crude equipment default. Purely a prescription — never logged as history.
+  const [coldStart, setColdStart] = useState(false);
+  const [coldStartOpen, setColdStartOpen] = useState(false);
+  const [coldStartDismissed, setColdStartDismissed] = useState<Set<string>>(new Set());
+  const canSeedStart = coldStart && !!selected && !!profile && !coldStartDismissed.has(selectedId);
+
+  const dismissColdStart = useCallback(() => {
+    setColdStartOpen(false);
+    setColdStartDismissed((s) => new Set(s).add(selectedId));
+  }, [selectedId]);
+
+  const submitColdStart = useCallback(
+    (weightLb: number, reps: number) => {
+      if (!selected || !profile) return;
+      // In-memory only: replace the shown prescription with an e1RM-derived,
+      // loadable starting target. The user's first real set becomes true history.
+      setTarget(seedTargetFromRepMax({ weight_lb: weightLb, reps }, selected, profile, profile.goal));
+      dismissColdStart();
+    },
+    [selected, profile, dismissColdStart],
+  );
+
   // Plateau breaker (FEATURES.md #5): the engine flags a genuine stall on the
   // target; offer a choice rather than silently deloading. Resolved (or twice
   // ignored) cards stay hidden for the exercise.
@@ -725,6 +753,21 @@ export function Home() {
               </button>
             </div>
           )}
+          {canSeedStart && (
+            <div className="px-4">
+              <button
+                type="button"
+                onClick={() => setColdStartOpen(true)}
+                className="mx-auto flex w-full max-w-md items-center justify-between gap-3 rounded-2xl border border-dashed border-neutral-300 px-4 py-3 text-left text-sm active:scale-[0.99] dark:border-neutral-700"
+              >
+                <span className="flex flex-col">
+                  <span className="font-semibold">Set a starting weight</span>
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400">First time on this lift — seed it from a set you remember instead of the default.</span>
+                </span>
+                <span aria-hidden className="text-neutral-400">→</span>
+              </button>
+            </div>
+          )}
           {!checkinDismissed && workoutStartedAt === null && (
             <div className="px-4">
               <ReadinessCheckIn onSubmit={submitCheckin} onSkip={skipCheckin} />
@@ -803,6 +846,14 @@ export function Home() {
           exerciseName={selected.name}
           onSubmit={submitCalibration}
           onSkip={() => setCalibrateOpen(false)}
+        />
+      )}
+
+      {coldStartOpen && selected && (
+        <ColdStartPrompt
+          exerciseName={selected.name}
+          onSubmit={submitColdStart}
+          onSkip={dismissColdStart}
         />
       )}
 
