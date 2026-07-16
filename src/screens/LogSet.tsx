@@ -73,6 +73,10 @@ interface LogSetProps {
   priorBestE1RM?: number;
   /** Recent sessions for the one-tap "Last time" glance (FEATURES.md #6). */
   history?: HistorySession[];
+  /** When alternating a pair (PAIRING.md), the exercise this rest leads INTO.
+   *  UI-only: relabels the rest ("next up · B") and the notification body. Absent
+   *  in the normal single-exercise case, where nothing changes. */
+  nextUpName?: string;
   onLogSet?: (set: LoggedSet) => void;
   onDeleteSet?: (id: string) => void;
 }
@@ -96,7 +100,7 @@ function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfil
   }
 }
 
-export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], onLogSet, onDeleteSet }: LogSetProps) {
+export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], nextUpName, onLogSet, onDeleteSet }: LogSetProps) {
   const unit = profile.weight_unit ?? 'lb';
   const isMetricBar = (profile.plate_system ?? 'imperial') === 'metric' && exercise.equipment === 'barbell';
   const weightStep = equipmentIncrement(exercise, profile);
@@ -186,7 +190,9 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
       setWeight(next.weight_lb);
       setReps(next.target_reps);
       setNextNote(next.note);
-      timer.start(next.rest_seconds, exercise.name);
+      // Paired: the rest leads into the OTHER exercise, so label it (and the
+      // notification) with what's up next. Duration is unchanged either way.
+      timer.start(next.rest_seconds, nextUpName ?? exercise.name);
     }
   };
 
@@ -298,16 +304,23 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
             <span className="text-sm font-semibold">{nextNote}</span>
           </div>
           {showTimer && (
-            <button
-              type="button"
-              onClick={timer.dismiss}
-              aria-label="rest timer"
-              className={`rounded-xl px-3 py-2 text-lg font-bold tabular-nums ${
-                timer.resting ? 'bg-emerald-600 text-white' : 'bg-neutral-200 text-neutral-500 dark:bg-neutral-700'
-              }`}
-            >
-              {timer.resting ? formatRest(timer.remaining) : 'rest done'}
-            </button>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                type="button"
+                onClick={timer.dismiss}
+                aria-label="rest timer"
+                className={`rounded-xl px-3 py-2 text-lg font-bold tabular-nums ${
+                  timer.resting ? 'bg-emerald-600 text-white' : 'bg-neutral-200 text-neutral-500 dark:bg-neutral-700'
+                }`}
+              >
+                {timer.resting ? formatRest(timer.remaining) : 'rest done'}
+              </button>
+              {nextUpName && (
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  next up · {nextUpName}
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}

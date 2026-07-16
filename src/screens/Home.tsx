@@ -34,6 +34,7 @@ import { formatDuration } from '../lib/liveProgression';
 import { LogSet, type LoggedSet } from './LogSet';
 import { ExerciseDetail } from './ExerciseDetail';
 import { ExercisePicker, type PickerExercise } from '../components/ExercisePicker';
+import { PairBar, type PairCell } from '../components/PairBar';
 import { WorkoutLog, type WorkoutLogEntry } from '../components/WorkoutLog';
 import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCheckIn';
 import { PlateauCard } from '../components/PlateauCard';
@@ -62,6 +63,14 @@ export function Home() {
   const [target, setTarget] = useState<SessionTarget | null>(null);
   const [tab, setTab] = useState<Tab>('log');
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Whether the picker is choosing the active lift ('switch') or a second lift to
+  // alternate with ('pair'). Ad hoc pairing — PAIRING.md.
+  const [pickerMode, setPickerMode] = useState<'switch' | 'pair'>('switch');
+  // Ad hoc alternating pair: an ordered [A, B] of exercise ids, held in view-state
+  // ONLY. Never persisted — a reload, session finish, or unpair clears it. The
+  // active (loggable) one is always `selectedId`; the other is "up next".
+  const [pairIds, setPairIds] = useState<[string, string] | null>(null);
+  const [pairedTarget, setPairedTarget] = useState<SessionTarget | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Session-start readiness check-in (FEATURES.md #2). Persisted per calendar day
@@ -263,6 +272,38 @@ export function Home() {
     if (selectedId && profile) void computeTarget(selectedId, profile);
   }, [selectedId, profile, computeTarget]);
 
+  // The paired (inactive) exercise while alternating — its id, and a display-only
+  // target for the pair bar. Computed WITHOUT side effects (no saved recommendation);
+  // the real recommendation for it lands the moment it becomes active.
+  const pairedId = pairIds ? pairIds.find((id) => id !== selectedId) ?? null : null;
+  const pairedName = pairedId ? resolvedExercises.find((e) => e.id === pairedId)?.name : undefined;
+
+  // Leaving the pair via the normal exercise switcher (a third lift) unpairs.
+  useEffect(() => {
+    if (pairIds && !pairIds.includes(selectedId)) setPairIds(null);
+  }, [selectedId, pairIds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const ex = pairedId ? resolvedExercises.find((e) => e.id === pairedId) : null;
+      if (!ex || !profile) {
+        setPairedTarget(null);
+        return;
+      }
+      const all = await store.getAllSessions(userId);
+      const anchor = all.length ? all.reduce((m, s) => (s.performed_at < m ? s.performed_at : m), all[0]!.performed_at) : null;
+      const plannedDeload = isPlannedDeloadWeek(anchor, new Date().toISOString(), profile.periodization_enabled);
+      const t =
+        recommendTarget(all, ex, index, profile, null, profile.ml_alpha_cap, readinessValue, plannedDeload) ??
+        deriveInitialTarget(all.filter((s) => s.exercise_id === pairedId), ex, profile.goal);
+      if (!cancelled) setPairedTarget(t);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pairedId, profile, resolvedExercises, index, readinessValue, store, userId, allSessions]);
+
   const onLogSet = useCallback(
     async (logged: LoggedSet) => {
       startTimerIfNeeded(); // first set of the session starts the workout clock
@@ -410,6 +451,7 @@ export function Home() {
     if (profile) await computeTarget(selectedId, profile);
     void store.flush(); // push the session's sets/recommendation/outcome now
     stopTimer(); // end the workout clock
+    setPairIds(null); // pairing is per-session view-state; it ends with the session
     setTab('detail');
   }, [store, userId, resolvedExercises, index, selectedId, profile, target, computeTarget, stopTimer]);
 
@@ -659,15 +701,30 @@ export function Home() {
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-10 flex flex-col gap-2 border-b border-neutral-200 bg-white/90 px-4 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
         <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            aria-label="Exercise"
-            onClick={() => setPickerOpen(true)}
-            className="flex max-w-[65%] items-center gap-1 rounded-lg bg-neutral-100 px-3 py-1.5 text-sm font-semibold dark:bg-neutral-800"
-          >
-            <span className="truncate">{selected.name}</span>
-            <span aria-hidden className="text-neutral-400">▾</span>
-          </button>
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              aria-label="Exercise"
+              onClick={() => setPickerOpen(true)}
+              className="flex min-w-0 items-center gap-1 rounded-lg bg-neutral-100 px-3 py-1.5 text-sm font-semibold dark:bg-neutral-800"
+            >
+              <span className="truncate">{selected.name}</span>
+              <span aria-hidden className="text-neutral-400">▾</span>
+            </button>
+            {!pairIds && (
+              <button
+                type="button"
+                aria-label="Pair exercise"
+                onClick={() => {
+                  setPickerMode('pair');
+                  setPickerOpen(true);
+                }}
+                className="shrink-0 rounded-lg bg-neutral-100 px-2.5 py-1.5 text-sm font-semibold text-neutral-500 active:scale-[0.98] dark:bg-neutral-800 dark:text-neutral-400"
+              >
+                ⇄ Pair
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-3 text-xs text-neutral-500 dark:text-neutral-400">
             {blockPhase && (
               <span
@@ -785,6 +842,24 @@ export function Home() {
               />
             </div>
           )}
+          {pairIds && (
+            <div className="pt-2">
+              <PairBar
+                cells={
+                  pairIds.map((id) => ({
+                    id,
+                    name: resolvedExercises.find((e) => e.id === id)?.name ?? 'Exercise',
+                    target: id === selectedId ? target : pairedTarget,
+                    setCount: workoutLog.find((w) => w.exercise_id === id)?.sets.filter((s) => !s.is_warmup).length ?? 0,
+                  })) as [PairCell, PairCell]
+                }
+                activeId={selectedId}
+                unit={profile.weight_unit}
+                onSwitch={setSelectedId}
+                onUnpair={() => setPairIds(null)}
+              />
+            </div>
+          )}
           <LogSet
             key={selectedId}
             userId={userId}
@@ -793,6 +868,7 @@ export function Home() {
             target={target}
             priorBestE1RM={priorBestE1RM}
             history={exerciseHistory}
+            nextUpName={pairedName}
             onLogSet={onLogSet}
             onDeleteSet={onDeleteSet}
           />
@@ -829,9 +905,20 @@ export function Home() {
         <ExercisePicker
           exercises={pickerExercises}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={(id) => {
+            // 'pair' mode picks the second lift to alternate with (view-state only);
+            // 'switch' mode changes the active lift as before. Can't pair with self.
+            if (pickerMode === 'pair') {
+              if (id !== selectedId) setPairIds([selectedId, id]);
+            } else {
+              setSelectedId(id);
+            }
+          }}
           onCreate={handleCreateExercise}
-          onClose={() => setPickerOpen(false)}
+          onClose={() => {
+            setPickerOpen(false);
+            setPickerMode('switch');
+          }}
         />
       )}
 

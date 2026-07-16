@@ -247,3 +247,70 @@ describe('LogSet screen', () => {
     expect(screen.getByText(/60 lb each hand · 120 lb on the body/)).toBeInTheDocument();
   });
 });
+
+// PAIRING.md — the `nextUpName` prop is the ONLY thing pairing adds to LogSet. It
+// must relabel the rest ("next up · B") without touching a single logged byte.
+describe('LogSet — exercise pairing (PAIRING.md)', () => {
+  beforeEach(() => localStorage.clear());
+
+  const stripId = (s: Record<string, unknown>) => {
+    const { id, ...rest } = s;
+    void id;
+    return rest;
+  };
+
+  it('logs a byte-identical set whether or not it is paired (no pairing field)', async () => {
+    const user = userEvent.setup();
+
+    const unpaired = vi.fn();
+    const r1 = render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} onLogSet={unpaired} />);
+    await user.click(screen.getByRole('button', { name: /hit target/i }));
+    r1.unmount();
+    localStorage.clear();
+
+    const paired = vi.fn();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} onLogSet={paired} nextUpName="Lateral Raise" />);
+    await user.click(screen.getByRole('button', { name: /hit target/i }));
+
+    const a = unpaired.mock.calls[0]![0] as Record<string, unknown>;
+    const b = paired.mock.calls[0]![0] as Record<string, unknown>;
+    // Exactly the normal LoggedSet keys — nothing marks the set as "paired".
+    const KEYS = ['failed', 'id', 'is_pr', 'is_warmup', 'pain', 'reps', 'rir', 'set_number', 'weight_lb'];
+    expect(Object.keys(b).sort()).toEqual(KEYS);
+    expect(Object.keys(a).sort()).toEqual(KEYS);
+    // Same values (ids are random, so compare with id stripped).
+    expect(stripId(b)).toEqual(stripId(a));
+  });
+
+  it('rest duration is unchanged when paired (rir 3 → 2:00 either way)', async () => {
+    const user = userEvent.setup();
+
+    const r1 = render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
+    fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '7' } });
+    fireEvent.change(screen.getByRole('slider', { name: /reps in reserve/i }), { target: { value: '3' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.getByText('2:00')).toBeInTheDocument();
+    r1.unmount();
+    localStorage.clear();
+
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} nextUpName="Lateral Raise" />);
+    fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '7' } });
+    fireEvent.change(screen.getByRole('slider', { name: /reps in reserve/i }), { target: { value: '3' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.getByText('2:00')).toBeInTheDocument(); // identical prescribed rest
+  });
+
+  it('the rest timer names the exercise the rest leads into', async () => {
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} nextUpName="Lateral Raise" />);
+    await user.click(screen.getByRole('button', { name: /hit target/i }));
+    expect(screen.getByText(/next up/i)).toHaveTextContent(/Lateral Raise/);
+  });
+
+  it('shows no next-exercise label when unpaired', async () => {
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
+    await user.click(screen.getByRole('button', { name: /hit target/i }));
+    expect(screen.queryByText(/next up/i)).not.toBeInTheDocument();
+  });
+});
