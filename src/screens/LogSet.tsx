@@ -10,7 +10,6 @@ import type { PainType } from '../lib/safety';
 import {
   BARBELL_KG_STEP,
   displayStep,
-  formatE1RM,
   formatWeightUnit,
   fromInput,
   toDisplay,
@@ -22,6 +21,7 @@ import { NumberStepper } from '../components/NumberStepper';
 import { RirSlider } from '../components/RirSlider';
 import { PlateChips } from '../components/PlateChips';
 import { SessionHistory } from '../components/SessionHistory';
+import { PrCelebration } from '../components/PrCelebration';
 import { useRestTimer } from '../hooks/useRestTimer';
 
 export interface LogSetExercise {
@@ -113,7 +113,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   const [isWarmup, setIsWarmup] = useState(false);
   const [sets, setSets] = useState<LoggedSet[]>([]);
   const [nextNote, setNextNote] = useState<string | null>(null);
-  const [prCelebration, setPrCelebration] = useState<number | null>(null);
+  const [prCelebration, setPrCelebration] = useState<{ e1rm: number; prev: number } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [warmupsDone, setWarmupsDone] = useState<Set<number>>(new Set());
   const [pain, setPain] = useState<PainType | null>(null);
@@ -167,8 +167,9 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     const e = setE1RM({ weight_lb: s.weight_lb, reps: s.reps, is_warmup: s.is_warmup, failed: s.failed }, exercise, profile);
     if (e !== null && e > bestE1RMRef.current + 1e-9) {
       is_pr = true;
+      const prev = bestE1RMRef.current; // capture BEFORE overwriting → delta vs. last
       bestE1RMRef.current = e;
-      setPrCelebration(e); // lb e1RM; formatted to the display unit at render
+      setPrCelebration({ e1rm: e, prev }); // lb e1RM; formatted to the display unit at render
     } else if (!s.is_warmup) {
       setPrCelebration(null); // a normal working set clears a stale celebration
     }
@@ -223,18 +224,18 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
 
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col gap-5 px-4 py-6 text-neutral-900 dark:text-neutral-50">
+      {/* Instrumentation around the number: the lift, the target, set progress —
+          all demoted to 10–14px so the working weight below is the screen. */}
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold">{exercise.name}</h1>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="rounded-full bg-emerald-600 px-3 py-1 font-semibold text-white">
-            Target {formatWeightUnit(target.target_weight_lb, unit)} × {target.target_reps}
-          </span>
-          <span className="text-neutral-500 dark:text-neutral-400">
-            set {Math.min(workingCount + 1, target.target_sets)} of {target.target_sets}
-          </span>
+        <h1 className="text-lg font-semibold text-neutral-100">{exercise.name}</h1>
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs uppercase tracking-wide text-neutral-500">
+          <span>target</span>
+          <span className="text-neutral-300">{`${formatWeightUnit(target.target_weight_lb, unit)} × ${target.target_reps}`}</span>
+          <span className="ml-1.5">set</span>
+          <span className="text-neutral-300">{`${Math.min(workingCount + 1, target.target_sets)} of ${target.target_sets}`}</span>
         </div>
         {target.rationale && (
-          <p className="mt-1 text-sm leading-snug text-neutral-500 dark:text-neutral-400">
+          <p className="mt-1 text-[13px] leading-snug text-neutral-400">
             {target.rationale}
           </p>
         )}
@@ -243,7 +244,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
             type="button"
             onClick={() => setShowHistory((v) => !v)}
             aria-expanded={showHistory}
-            className="mt-1 self-start text-sm font-medium text-emerald-700 dark:text-emerald-400"
+            className="mt-1 self-start text-[13px] font-medium text-neutral-300"
           >
             {showHistory ? 'Hide history ▴' : 'Last time ▾'}
           </button>
@@ -288,13 +289,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
       )}
 
       {prCelebration !== null && (
-        <div
-          role="status"
-          className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-white"
-        >
-          <span className="text-lg" aria-hidden>🎉</span>
-          <span className="text-sm font-bold">New PR — {formatE1RM(prCelebration, unit)} {unit} estimated 1RM!</span>
-        </div>
+        <PrCelebration e1rm={prCelebration.e1rm} prev={prCelebration.prev} unit={unit} />
       )}
 
       {nextNote && (
@@ -343,6 +338,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
 
       <NumberStepper
         label="Weight"
+        size="hero"
         value={Number(toDisplay(weight, unit).toFixed(2))}
         onChange={(dv) => setWeight(fromInput(dv, unit))}
         step={displayWeightStep}
@@ -367,7 +363,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
           type="checkbox"
           checked={isWarmup}
           onChange={(e) => setIsWarmup(e.target.checked)}
-          className="h-5 w-5 rounded accent-emerald-600"
+          className="h-5 w-5 rounded accent-neutral-100"
         />
         Warm-up set (excluded from progression)
       </label>
@@ -405,30 +401,30 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
         )}
       </div>
 
-      <div className="flex flex-col gap-2">
+      {/* One clear action: chalk-on-iron, and wider than the rest. The secondary
+          pair stays quiet iron so the primary is unmistakable at arm's length. */}
+      <div className="flex items-stretch gap-2">
         <button
           type="button"
           onClick={hitTarget}
-          className="rounded-2xl bg-emerald-600 py-4 text-lg font-bold text-white active:scale-[0.99]"
+          className="flex-[2] rounded-2xl bg-neutral-100 py-4 text-lg font-bold text-neutral-900 active:scale-[0.99]"
         >
-          Hit target ✓
+          Hit target
         </button>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={logCurrent}
-            className="flex-1 rounded-2xl bg-neutral-200 py-3 font-semibold text-neutral-800 active:scale-[0.99] dark:bg-neutral-700 dark:text-neutral-100"
-          >
-            Log set
-          </button>
-          <button
-            type="button"
-            onClick={markFailed}
-            className="rounded-2xl bg-neutral-100 px-4 py-3 font-medium text-amber-700 active:scale-[0.99] dark:bg-neutral-800 dark:text-amber-400"
-          >
-            Missed
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={logCurrent}
+          className="flex-1 rounded-2xl border border-neutral-600 py-4 font-semibold text-neutral-200 active:scale-[0.99]"
+        >
+          Log set
+        </button>
+        <button
+          type="button"
+          onClick={markFailed}
+          className="rounded-2xl border border-neutral-700 px-4 py-4 font-medium text-neutral-400 active:scale-[0.99]"
+        >
+          Missed
+        </button>
       </div>
 
       {sets.length > 0 && (
@@ -445,7 +441,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
                 <span className="flex items-center gap-1.5 font-medium">
                   {s.is_warmup ? 'Warm-up' : `Set ${s.set_number}`}
                   {s.is_pr && (
-                    <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    <span className="rounded-full border border-neutral-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-300">
                       PR
                     </span>
                   )}

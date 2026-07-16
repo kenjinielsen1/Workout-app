@@ -175,7 +175,7 @@ export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onCl
               type="button"
               onClick={() => submitCreate(false)}
               disabled={!name.trim()}
-              className="mt-2 rounded-2xl bg-emerald-600 py-3 text-base font-bold text-white active:scale-[0.99] disabled:opacity-50"
+              className="mt-2 rounded-2xl bg-neutral-100 py-3 text-base font-bold text-neutral-900 active:scale-[0.99] disabled:opacity-50"
             >
               Add exercise
             </button>

@@ -5,6 +5,9 @@ interface NumberStepperProps {
   step: number;
   min?: number;
   unit?: string;
+  /** 'hero' makes the value the dominant object on the screen — the working
+   *  weight at ~96px (DESIGN.md rule 1). 'default' is a normal instrument. */
+  size?: 'default' | 'hero';
   'data-testid'?: string;
 }
 
@@ -16,15 +19,17 @@ export function NumberStepper({
   step,
   min = 0,
   unit,
+  size = 'default',
   ...rest
 }: NumberStepperProps) {
   const clamp = (n: number) => Math.max(min, Number(n.toFixed(4)));
   const dec = () => onChange(clamp(value - step));
   const inc = () => onChange(clamp(value + step));
+  const hero = size === 'hero';
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
+      <label className="text-xs font-medium uppercase tracking-wide text-neutral-500">
         {label}
       </label>
       <div className="flex items-stretch gap-2">
@@ -32,11 +37,11 @@ export function NumberStepper({
           type="button"
           aria-label={`decrease ${label}`}
           onClick={dec}
-          className="w-16 rounded-2xl bg-neutral-200 text-3xl font-semibold text-neutral-800 active:scale-95 dark:bg-neutral-700 dark:text-neutral-100"
+          className={`${hero ? 'w-16 text-4xl' : 'w-16 text-3xl'} rounded-2xl bg-neutral-700 font-semibold text-neutral-200 active:scale-95`}
         >
           −
         </button>
-        <div className="flex flex-1 items-baseline justify-center gap-1 rounded-2xl bg-neutral-100 px-3 py-4 dark:bg-neutral-800">
+        <div className="flex flex-1 items-baseline justify-center gap-1.5 rounded-2xl bg-neutral-800 px-3 py-4">
           <input
             type="number"
             inputMode="decimal"
@@ -46,17 +51,21 @@ export function NumberStepper({
             step={step}
             min={min}
             onChange={(e) => onChange(clamp(Number(e.target.value)))}
-            className="w-full bg-transparent text-center text-5xl font-bold tabular-nums text-neutral-900 outline-none dark:text-neutral-50"
+            className={`w-full bg-transparent text-center font-bold tabular-nums text-neutral-50 outline-none ${
+              hero
+                ? 'text-[clamp(64px,22vw,96px)] leading-[0.82] tracking-[-0.04em]'
+                : 'text-5xl'
+            }`}
           />
           {unit && (
-            <span className="text-lg font-medium text-neutral-400">{unit}</span>
+            <span className={`font-medium text-neutral-400 ${hero ? 'text-xl' : 'text-lg'}`}>{unit}</span>
           )}
         </div>
         <button
           type="button"
           aria-label={`increase ${label}`}
           onClick={inc}
-          className="w-16 rounded-2xl bg-neutral-200 text-3xl font-semibold text-neutral-800 active:scale-95 dark:bg-neutral-700 dark:text-neutral-100"
+          className={`${hero ? 'w-16 text-4xl' : 'w-16 text-3xl'} rounded-2xl bg-neutral-700 font-semibold text-neutral-200 active:scale-95`}
         >
           +
         </button>

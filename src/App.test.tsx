@@ -17,7 +17,7 @@ describe('App (demo mode end-to-end)', () => {
     // Home loads with the squat selected (shown on the picker button) and a target.
     const exerciseButton = await screen.findByRole('button', { name: 'Exercise' });
     expect(exerciseButton).toHaveTextContent('Barbell Back Squat');
-    expect(await screen.findByText(/Target \d+ lb ×/)).toBeInTheDocument();
+    expect(await screen.findByText(/^\d+ lb × \d+$/)).toBeInTheDocument();
 
     // Detail tab shows the 10 seeded sessions.
     await user.click(screen.getByRole('button', { name: 'Exercise Detail' }));

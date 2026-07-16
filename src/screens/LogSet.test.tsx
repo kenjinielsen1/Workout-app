@@ -30,7 +30,7 @@ describe('LogSet screen', () => {
 
   it('shows the target and the plate breakdown for the current weight', () => {
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
-    expect(screen.getByText(/Target 225 lb × 5/)).toBeInTheDocument();
+    expect(screen.getByText('225 lb × 5')).toBeInTheDocument();
     // 225 = bar (45) + 45 + 45 per side
     expect(screen.getByText('bar 45')).toBeInTheDocument();
     expect(screen.getByText('2×45')).toBeInTheDocument();
@@ -156,7 +156,9 @@ describe('LogSet screen', () => {
     // 225×5 → e1RM 262.5, beats a prior best of 250.
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} priorBestE1RM={250} />);
     await user.click(screen.getByRole('button', { name: /hit target/i }));
-    expect(screen.getByRole('status')).toHaveTextContent(/New PR/i);
+    // Coach voice (DESIGN.md rule 4): "New best.", not "New PR!".
+    expect(screen.getByRole('status')).toHaveTextContent(/new best/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/on your previous best/i);
     expect(within(screen.getByRole('list')).getByText('PR')).toBeInTheDocument();
   });
 
@@ -217,7 +219,7 @@ describe('LogSet screen', () => {
         onLogSet={onLogSet}
       />,
     );
-    expect(screen.getByText(/Target 102 kg × 5/)).toBeInTheDocument(); // displayed in kg
+    expect(screen.getByText('102 kg × 5')).toBeInTheDocument(); // displayed in kg
     await user.click(screen.getByRole('button', { name: /hit target/i }));
     // Stored value is the original lb — the engine never sees kg.
     expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 225 }));
@@ -225,7 +227,7 @@ describe('LogSet screen', () => {
 
   it('lb user: weight readout is byte-for-byte unchanged (regression guard)', () => {
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);
-    expect(screen.getByText(/Target 225 lb × 5/)).toBeInTheDocument();
+    expect(screen.getByText('225 lb × 5')).toBeInTheDocument();
     expect(screen.getByTestId('weight-input')).toHaveValue(225);
   });
 

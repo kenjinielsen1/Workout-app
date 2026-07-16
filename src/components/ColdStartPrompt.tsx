@@ -51,7 +51,7 @@ export function ColdStartPrompt({ exerciseName, onSubmit, onSkip }: Props) {
             Use default
           </button>
           <button type="button" disabled={!valid} onClick={() => onSubmit(w, r)}
-            className="flex-1 rounded-2xl bg-emerald-600 py-3 font-bold text-white active:scale-[0.99] disabled:opacity-60">
+            className="flex-1 rounded-2xl bg-neutral-100 py-3 font-bold text-neutral-900 active:scale-[0.99] disabled:opacity-60">
             Set start
           </button>
         </div>

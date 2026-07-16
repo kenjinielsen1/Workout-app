@@ -59,7 +59,7 @@ export function SignIn() {
             <button
               type="submit"
               disabled={busy}
-              className="rounded-2xl bg-emerald-600 py-3 text-base font-bold text-white active:scale-[0.99] disabled:opacity-60"
+              className="rounded-2xl bg-neutral-100 py-3 text-base font-bold text-neutral-900 active:scale-[0.99] disabled:opacity-60"
             >
               {busy ? '…' : isSignUp ? 'Sign up' : 'Sign in'}
             </button>
@@ -75,7 +75,7 @@ export function SignIn() {
           <button
             type="button"
             onClick={continueAsDemo}
-            className="rounded-2xl bg-emerald-600 py-3 text-base font-bold text-white active:scale-[0.99]"
+            className="rounded-2xl bg-neutral-100 py-3 text-base font-bold text-neutral-900 active:scale-[0.99]"
           >
             Continue in demo mode
           </button>

@@ -48,7 +48,7 @@ export function RirCalibrationPrompt({ exerciseName, onSubmit, onSkip }: Props) 
             Not now
           </button>
           <button type="button" disabled={!valid} onClick={() => onSubmit(p, a)}
-            className="flex-1 rounded-2xl bg-emerald-600 py-3 font-bold text-white active:scale-[0.99] disabled:opacity-60">
+            className="flex-1 rounded-2xl bg-neutral-100 py-3 font-bold text-neutral-900 active:scale-[0.99] disabled:opacity-60">
             Save
           </button>
         </div>

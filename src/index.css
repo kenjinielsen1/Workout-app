@@ -1,50 +1,68 @@
 @import 'tailwindcss';
 
-/* ── Premium matte-black theme ──────────────────────────────────────────────
-   The app is always dark (ignores the OS light/dark setting): `dark:` utilities
-   are class-based and <html> carries the `dark` class. We also remap Tailwind's
-   neutral ramp to a matte-black surface set, so every existing `neutral-*` class
-   across the app picks up the premium palette with no per-component edits.      */
+/* ── Iron / chalk / copper — see DESIGN.md ───────────────────────────────────
+   The app is always dark (gyms are dim; the phone is 18in from your face between
+   sets). `dark:` utilities are class-based and <html> carries the `dark` class.
+
+   We remap Tailwind's neutral + emerald ramps in @theme so every existing
+   `neutral-*` / `emerald-*` class across the app picks up the palette with no
+   per-component edits. This is deliberately NOT the near-black + crimson look the
+   stack ships by default — that's the exact AI-design tell DESIGN.md rejects.   */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* Matte-black surface ramp. */
-  --color-neutral-950: #070809; /* app background (near-black) */
-  --color-neutral-900: #0e0f12; /* sticky header / elevated */
-  --color-neutral-800: #16181d; /* cards, inputs, chips */
-  --color-neutral-700: #232730; /* raised controls */
-  --color-neutral-600: #3b4048;
-  --color-neutral-500: #868d99; /* secondary text */
-  --color-neutral-400: #a4abb6;
-  --color-neutral-300: #c7ccd4;
-  /* NOTE: 100/200 stay LIGHT — they're used as light *text* in dark mode
-     (`dark:text-neutral-100/200`, e.g. the timer + Log-set button). Their
-     background uses (`bg-neutral-100/200`) are always paired with a `dark:bg-*`
-     override, so those pick the dark surface regardless. */
-  --color-neutral-200: #cfd4dc;
-  --color-neutral-100: #e9ecf1;
-  --color-neutral-50: #f3f5f8; /* primary text (near-white) */
+  /* Iron surface ramp: warm dark gray with green in it — NOT near-black.
+     950/900 = header & page, 800 = raised instrument tiles, 700 = raised
+     controls / secondary buttons, 600 = borders. */
+  --color-neutral-950: #131416; /* sticky header over iron */
+  --color-neutral-900: #17181a; /* --iron: page background */
+  --color-neutral-800: #202225; /* --iron-raised: tiles, inputs, chips */
+  --color-neutral-700: #2a2d30; /* raised controls, secondary buttons */
+  --color-neutral-600: #3a3d40; /* --border */
+  --color-neutral-500: #62665f; /* --gray-mute: labels, eyebrows */
+  --color-neutral-400: #7e837c; /* --gray-green: rationale, body copy */
+  --color-neutral-300: #b9bcb4; /* --chalk-dim: secondary values */
+  /* 100/200/50 are used as light *text* in dark mode (dark:text-neutral-*); their
+     bg uses are always paired with a dark: override. They are CHALK (bone), not
+     white — DESIGN.md is emphatic about this. */
+  --color-neutral-200: #d8d4c9; /* bright secondary text */
+  --color-neutral-100: #e8e4d9; /* --chalk: primary text */
+  --color-neutral-50: #e8e4d9; /* --chalk: primary text */
 
-  /* Signature accent — CRIMSON. We remap the `emerald-*` tokens the app already
-     uses, so every accent surface (buttons, active tabs/chips, selected rows, PR
-     markers) turns crimson app-wide with no per-component edits. */
-  --color-emerald-600: #e11d48; /* primary accent (white text stays legible) */
-  --color-emerald-500: #f43f5e; /* focus rings / brighter */
-  --color-emerald-400: #fb7185;
-  --color-emerald-100: #ffe4e6; /* selected-row text */
-  --color-emerald-950: #4c0519; /* selected-row tint */
+  /* The old crimson accent, neutralized. Everything that used to be an accent
+     surface (active tab, selected row, slider fill, links, filled buttons in
+     modals) collapses into quiet iron/chalk. There is NO app-wide accent hue —
+     boldness is spent only on the PR (copper), and only there. */
+  --color-emerald-600: #2a2d30; /* filled active/primary tiles (chalk text on top) */
+  --color-emerald-500: #3a3d40; /* focus ring / brighter edge */
+  --color-emerald-400: #b9bcb4; /* was accent text → chalk-dim, hueless */
+  --color-emerald-700: #b9bcb4; /* light-mode link text (dark: variant wins anyway) */
+  --color-emerald-100: #e8e4d9; /* selected-row text → chalk */
+  --color-emerald-950: #202225; /* selected-row tint → iron-raised */
 }
 
 :root {
   color-scheme: dark;
 
-  /* Data-viz tokens (dark, validated) — the app is always dark. */
-  --viz-surface: #0e0f12;
-  --viz-grid: #23272e;
-  --viz-axis-text: #868d99;
-  --viz-blue: #3987e5;
-  --viz-aqua: #199e70;
-  --viz-good: #e11d48; /* PR markers + gains take the crimson accent */
+  /* DESIGN.md tokens, also exposed as raw vars for the few hand-styled spots. */
+  --iron: #17181a;
+  --iron-raised: #202225;
+  --chalk: #e8e4d9;
+  --chalk-dim: #b9bcb4;
+  --gray-green: #7e837c;
+  --gray-mute: #62665f;
+  --hairline: #2e3033;
+  --border: #3a3d40;
+  --copper: #c8703c; /* PR ONLY — never used outside PrCelebration */
+
+  /* Data-viz tokens: chalk / gray-green, no accent, no copper (copper never
+     touches a chart line — DESIGN.md rule 2). */
+  --viz-surface: #17181a;
+  --viz-grid: #2e3033;
+  --viz-axis-text: #62665f;
+  --viz-blue: #8a9aa6; /* muted steel */
+  --viz-aqua: #7e837c; /* gray-green */
+  --viz-good: #b9bcb4; /* gains / PR markers in charts → chalk-dim, NOT copper */
 }
 
 html,
@@ -54,15 +72,58 @@ body,
 }
 
 body {
-  background-color: #070809;
-  /* A whisper of crimson glow at the top — premium, not loud. */
-  background-image: radial-gradient(120% 55% at 50% -10%, rgba(225, 29, 72, 0.07), transparent 60%);
-  background-attachment: fixed;
+  background-color: var(--iron);
+  color: var(--chalk);
+  /* Tabular numerals everywhere by default (DESIGN.md rule 3): weights, reps,
+     timers, e1RM, volume never jitter as they change. */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Tighter, more confident headings. */
+/* Tight, confident headings — mechanical, not shouty. */
 h1,
 h2 {
   letter-spacing: -0.015em;
+}
+
+/* Copper is a class, not a palette token, so a stray utility can never reach it —
+   it is only ever applied deliberately, on the PR. */
+.text-copper {
+  color: var(--copper);
+}
+.bg-copper {
+  background-color: var(--copper);
+}
+.border-copper {
+  border-color: var(--copper);
+}
+
+/* Quality floor: a visible keyboard-focus state in chalk (not the UA blue ring). */
+:focus-visible {
+  outline: 2px solid var(--chalk);
+  outline-offset: 2px;
+}
+
+/* The PR is the one loud moment; skip it when the OS asks for reduced motion. */
+@keyframes pr-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-6px) rotate(-0.4deg); }
+  30% { transform: translateX(5px) rotate(0.3deg); }
+  45% { transform: translateX(-4px); }
+  60% { transform: translateX(3px); }
+  75% { transform: translateX(-2px); }
+}
+.pr-shake {
+  animation: pr-shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

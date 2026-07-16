@@ -258,7 +258,7 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
             type="button"
             onClick={save}
             disabled={saving}
-            className="w-full rounded-2xl bg-emerald-600 py-3 text-base font-bold text-white active:scale-[0.99] disabled:opacity-60"
+            className="w-full rounded-2xl bg-neutral-100 py-3 text-base font-bold text-neutral-900 active:scale-[0.99] disabled:opacity-60"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>

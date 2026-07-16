@@ -16,9 +16,9 @@ interface Props {
 }
 
 const ROWS = [
-  { key: 'sleep_quality', label: 'Sleep', hint: '1 poor · 5 great', emoji: '😴' },
-  { key: 'soreness', label: 'Soreness', hint: '1 fresh · 5 very sore', emoji: '💪' },
-  { key: 'energy', label: 'Energy', hint: '1 flat · 5 buzzing', emoji: '⚡' },
+  { key: 'sleep_quality', label: 'Sleep', hint: '1 poor · 5 great' },
+  { key: 'soreness', label: 'Soreness', hint: '1 fresh · 5 very sore' },
+  { key: 'energy', label: 'Energy', hint: '1 flat · 5 buzzing' },
 ] as const;
 
 export function ReadinessCheckIn({ onSubmit, onSkip }: Props) {
@@ -52,9 +52,7 @@ export function ReadinessCheckIn({ onSubmit, onSkip }: Props) {
       {ROWS.map((row) => (
         <div key={row.key} className="flex flex-col gap-1">
           <div className="flex items-baseline justify-between">
-            <span className="text-sm font-medium">
-              {row.emoji} {row.label}
-            </span>
+            <span className="text-sm font-medium">{row.label}</span>
             <span className="text-[11px] text-neutral-400">{row.hint}</span>
           </div>
           <div className="flex gap-1.5">

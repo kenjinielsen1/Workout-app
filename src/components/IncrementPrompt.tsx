@@ -81,7 +81,7 @@ export function IncrementPrompt({ exerciseName, defaultIncrement, onSave, onSkip
             type="button"
             disabled={!valid}
             onClick={() => onSave(incNum, min.trim() === '' ? null : Number(min))}
-            className="flex-1 rounded-2xl bg-emerald-600 py-3 font-bold text-white active:scale-[0.99] disabled:opacity-60"
+            className="flex-1 rounded-2xl bg-neutral-100 py-3 font-bold text-neutral-900 active:scale-[0.99] disabled:opacity-60"
           >
             Save
           </button>

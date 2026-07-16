@@ -47,7 +47,7 @@ export function SafetyOnboarding({ onAcknowledge }: Props) {
         <button
           type="button"
           onClick={() => onAcknowledge([...selected])}
-          className="w-full rounded-2xl bg-emerald-600 py-3 text-base font-bold text-white active:scale-[0.99]"
+          className="w-full rounded-2xl bg-neutral-100 py-3 text-base font-bold text-neutral-900 active:scale-[0.99]"
         >
           I understand
         </button>
