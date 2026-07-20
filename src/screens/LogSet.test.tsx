@@ -86,6 +86,33 @@ describe('LogSet screen', () => {
     );
   });
 
+  // POLISH.md §4: a fat-finger must not silently corrupt the e1RM.
+  it('asks to confirm an absurd weight entry before logging it', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} onLogSet={onLogSet} />);
+    // Fat-finger 225 → 2250 (10×). Logging must NOT fire yet.
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '2250' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(onLogSet).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('alertdialog', { name: /confirm weight/i });
+    expect(dialog).toHaveTextContent(/big jump/i);
+
+    // Confirming logs it as entered; the value is never silently altered.
+    await user.click(within(dialog).getByRole('button', { name: 'Log it' }));
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 2250 }));
+  });
+
+  it('does not nag on a normal working-weight entry', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} onLogSet={onLogSet} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '230' } }); // within range
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 230 }));
+  });
+
   it('advances the next set up one increment after beating the target easily', async () => {
     const user = userEvent.setup();
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} />);

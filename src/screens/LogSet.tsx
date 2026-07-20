@@ -115,6 +115,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   const [sets, setSets] = useState<LoggedSet[]>([]);
   const [nextNote, setNextNote] = useState<string | null>(null);
   const [prCelebration, setPrCelebration] = useState<{ e1rm: number; prev: number } | null>(null);
+  const [pendingBig, setPendingBig] = useState<{ set: Omit<LoggedSet, 'set_number' | 'id'> } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [warmupsDone, setWarmupsDone] = useState<Set<number>>(new Set());
   const [pain, setPain] = useState<PainType | null>(null);
@@ -204,7 +205,18 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     }
   };
 
+  // Fat-finger guard (POLISH.md §4): a typo'd 2250 for 225 would silently corrupt
+  // the e1RM. Sanity-bound a working-weight entry against the target (which already
+  // encodes recent history); >2× or <0.5× off asks a gentle confirm before logging.
+  // Warm-ups are intentionally light, so they're exempt.
+  const isAbsurd = (w: number, warmup: boolean) =>
+    !warmup && target.target_weight_lb > 0 && (w > target.target_weight_lb * 2 || w < target.target_weight_lb * 0.5);
+
   const logCurrent = () => {
+    if (isAbsurd(weight, isWarmup)) {
+      setPendingBig({ set: { weight_lb: weight, reps, rir, is_warmup: isWarmup, failed: false } });
+      return;
+    }
     commit({ weight_lb: weight, reps, rir, is_warmup: isWarmup, failed: false });
   };
 
@@ -224,6 +236,10 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   };
 
   const markFailed = () => {
+    if (isAbsurd(weight, isWarmup)) {
+      setPendingBig({ set: { weight_lb: weight, reps, rir: 0, is_warmup: isWarmup, failed: true } });
+      return;
+    }
     commit({ weight_lb: weight, reps, rir: 0, is_warmup: isWarmup, failed: true });
   };
 
@@ -410,6 +426,31 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
           </span>
         )}
       </div>
+
+      {pendingBig && (
+        <div role="alertdialog" aria-label="Confirm weight" className="flex flex-col gap-3 rounded-2xl border border-amber-500/60 bg-neutral-800 px-4 py-3">
+          <p className="text-sm leading-snug text-neutral-200">
+            <span className="font-semibold tabular-nums">{formatWeightUnit(pendingBig.set.weight_lb, unit)}</span> is a big jump from your target of{' '}
+            <span className="font-semibold tabular-nums">{formatWeightUnit(target.target_weight_lb, unit)}</span>. Log it?
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { const p = pendingBig; setPendingBig(null); commit(p.set); }}
+              className="flex-1 rounded-2xl bg-neutral-100 py-3 font-bold text-neutral-900 active:scale-[0.99]"
+            >
+              Log it
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingBig(null)}
+              className="flex-1 rounded-2xl border border-neutral-600 py-3 font-semibold text-neutral-200 active:scale-[0.99]"
+            >
+              Go back
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* One clear action: chalk-on-iron, and wider than the rest. The secondary
           pair stays quiet iron so the primary is unmistakable at arm's length. */}
