@@ -50,6 +50,12 @@ export class LocalFirstStore implements WorkoutStore {
     this.ready = this.init(opts.dbName);
   }
 
+  /** True in Supabase mode (a backend exists to sync to). Demo/offline-only
+   *  returns false, so the "not synced" indicator never appears there. */
+  get syncConfigured(): boolean {
+    return this.remote !== null;
+  }
+
   private async putCatalog(exercises: Exercise[], aliases: Map<string, string[]>): Promise<void> {
     const tx = this.db.transaction(['exercises', 'aliases'], 'readwrite');
     for (const e of exercises) void tx.objectStore('exercises').put(e);

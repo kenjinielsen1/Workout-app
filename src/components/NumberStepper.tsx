@@ -45,7 +45,7 @@ export function NumberStepper({
           <input
             type="number"
             inputMode="decimal"
-            aria-label={label}
+            aria-label={unit ? `${label} in ${unit}` : label}
             data-testid={rest['data-testid']}
             value={value}
             step={step}
@@ -53,7 +53,10 @@ export function NumberStepper({
             onChange={(e) => onChange(clamp(Number(e.target.value)))}
             className={`w-full bg-transparent text-center font-bold tabular-nums text-neutral-50 outline-none ${
               hero
-                ? 'text-[clamp(64px,22vw,96px)] leading-[0.82] tracking-[-0.04em]'
+                ? // rem-based so it scales with the system text-size setting (dynamic
+                  // type, POLISH.md §7); the vw term keeps it responsive, the +rem term
+                  // is what grows when the user bumps their font size.
+                  'text-[clamp(3.5rem,8vw+2rem,6.5rem)] leading-[0.82] tracking-[-0.04em]'
                 : 'text-5xl'
             }`}
           />

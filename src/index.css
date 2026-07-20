@@ -117,6 +117,23 @@ h2 {
   animation: pr-shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
+/* Ordinary transitions are quiet — things settle in, they don't pop (POLISH.md §3).
+   Only the PR above is loud. Both are neutralized by the reduced-motion guard. */
+@keyframes settle-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.settle-in {
+  animation: settle-in 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.row-in {
+  animation: row-in 0.2s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

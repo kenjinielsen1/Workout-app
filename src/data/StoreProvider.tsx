@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { LocalFirstStore } from './localStore';
 import { SupabaseRemoteSync } from './remoteSync';
 import { SupabaseRemoteSource } from './remoteSource';
+import { markSyncOk } from '../lib/syncStatus';
 
 // The app always talks to the local-first (IndexedDB) store — reads and the
 // recommendation path never touch the network. In Supabase mode a RemoteSync is
@@ -39,6 +40,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const reconcile = async () => {
       await store.flush();
       if (user) await store.hydrate(user.id).catch(() => {});
+      // Stamp a clean sync so the "not synced" indicator can anchor "since ...".
+      if (user && store.syncConfigured && (await store.pendingSyncCount()) === 0) {
+        markSyncOk(user.id);
+      }
     };
     void reconcile();
     const onOnline = () => void reconcile();

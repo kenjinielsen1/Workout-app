@@ -22,6 +22,7 @@ import { RirSlider } from '../components/RirSlider';
 import { PlateChips } from '../components/PlateChips';
 import { SessionHistory } from '../components/SessionHistory';
 import { PrCelebration } from '../components/PrCelebration';
+import { FirstTimeHint } from '../components/FirstTimeHint';
 import { haptic } from '../lib/haptics';
 import { useRestTimer } from '../hooks/useRestTimer';
 
@@ -382,6 +383,10 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
         data-testid="reps-input"
       />
 
+      <FirstTimeHint id="rir-slider">
+        RIR is reps in reserve — how many you could still do at the end of a set. It’s
+        how the app reads your effort and decides when to add weight.
+      </FirstTimeHint>
       <RirSlider value={rir} onChange={setRir} />
 
       <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
@@ -487,7 +492,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
             {sets.map((s) => (
               <li
                 key={s.id}
-                className="flex items-center justify-between gap-2 rounded-xl bg-neutral-100 px-3 py-2 text-sm dark:bg-neutral-800"
+                className="row-in flex items-center justify-between gap-2 rounded-xl bg-neutral-100 px-3 py-2 text-sm dark:bg-neutral-800"
               >
                 <span className="flex items-center gap-1.5 font-medium">
                   {s.is_warmup ? 'Warm-up' : `Set ${s.set_number}`}

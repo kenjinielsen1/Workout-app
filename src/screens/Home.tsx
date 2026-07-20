@@ -36,6 +36,9 @@ import { ExerciseDetail } from './ExerciseDetail';
 import { ExercisePicker, type PickerExercise } from '../components/ExercisePicker';
 import { PairBar, type PairCell } from '../components/PairBar';
 import { EmptyState } from '../components/EmptyState';
+import { SyncNotice } from '../components/SyncNotice';
+import { FirstTimeHint } from '../components/FirstTimeHint';
+import { useSyncStatus } from '../hooks/useSyncStatus';
 import { WorkoutLog, type WorkoutLogEntry } from '../components/WorkoutLog';
 import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCheckIn';
 import { PlateauCard } from '../components/PlateauCard';
@@ -60,6 +63,7 @@ export function Home() {
   const [aliasById, setAliasById] = useState<Map<string, string[]>>(new Map());
   const [selectedId, setSelectedId] = useState<string>('');
   const [loaded, setLoaded] = useState(false); // tell "still loading" from "loaded, empty"
+  const syncStatus = useSyncStatus(store, userId);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allSessions, setAllSessions] = useState<AllSession[]>([]);
   const [target, setTarget] = useState<SessionTarget | null>(null);
@@ -806,7 +810,12 @@ export function Home() {
       </header>
 
       {tab === 'log' ? (
-        <div className="flex flex-col gap-2 pt-3">
+        <div className="settle-in flex flex-col gap-2 pt-3">
+          {syncStatus.stale && (
+            <div className="px-4">
+              <SyncNotice since={syncStatus.since} />
+            </div>
+          )}
           {painReferralResult.refer && (
             <div className="px-4">
               <SafetyNotice tone="refer" lead={painReferralResult.reason} message={PROFESSIONAL_REFERRAL_MESSAGE} />
@@ -856,7 +865,11 @@ export function Home() {
             </div>
           )}
           {!checkinDismissed && workoutStartedAt === null && (
-            <div className="px-4">
+            <div className="flex flex-col gap-2 px-4">
+              <FirstTimeHint id="readiness-checkin">
+                A 15-second read on how recovered you are. Low scores gently ease today’s
+                targets; skip it and nothing changes.
+              </FirstTimeHint>
               <ReadinessCheckIn onSubmit={submitCheckin} onSkip={skipCheckin} />
             </div>
           )}
