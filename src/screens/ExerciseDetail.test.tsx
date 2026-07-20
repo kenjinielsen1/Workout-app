@@ -55,9 +55,11 @@ describe('ExerciseDetail', () => {
     expect(items[0]!).toHaveTextContent('251 lb e1RM'); // newest PR at top
   });
 
-  it('shows an empty state for a brand-new exercise', () => {
+  it('shows an inviting empty state for a brand-new exercise (POLISH.md §1)', () => {
     render(<ExerciseDetail exercise={exercise} profile={profile} sessions={[]} />);
-    expect(screen.getAllByText('No data yet').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/0 sessions/)).toBeInTheDocument();
+    // An invitation, not an apology — never "no data".
+    expect(screen.getByRole('heading', { name: /strength curve starts here/i })).toBeInTheDocument();
+    expect(screen.getByText(/Not logged yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/no data/i)).not.toBeInTheDocument();
   });
 });

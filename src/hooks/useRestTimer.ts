@@ -24,6 +24,7 @@ import {
   type NotifyCapability,
 } from '../lib/restNotify';
 import { cancelServerPush, scheduleServerPush } from '../lib/push';
+import { haptic } from '../lib/haptics';
 
 export interface UseRestTimer {
   /** Seconds remaining (0 once elapsed). Derived from the wall clock. */
@@ -63,6 +64,7 @@ export function useRestTimer(userId: string): UseRestTimer {
       const updated = { ...s, notified: true };
       setState(updated);
       persistRest(userId, updated);
+      haptic('affirm'); // the phone may be face-down on a bench (POLISH.md §2)
       void showRestCompleteNow();
     },
     [userId],

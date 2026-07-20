@@ -63,3 +63,21 @@ export function displayStep(lbStep: number, unit: WeightUnit): number {
 export function formatE1RM(lb: number, unit: WeightUnit): string {
   return String(Math.round(toDisplay(lb, unit)));
 }
+
+// Display-layer number formatting (POLISH.md §5). One utility so no screen
+// re-implements rounding and drifts — and so a float artifact like
+// `7.700000000000001%` can never reach the glyph layer.
+
+/** A change fraction (e.g. 0.032 → "+3%") for display. Rounds; a real minus glyph
+ *  for negatives; no float noise. */
+export function formatPercent(fraction: number, decimals = 0): string {
+  const pct = fraction * 100;
+  const rounded = Number(pct.toFixed(decimals));
+  const sign = rounded > 0 ? '+' : rounded < 0 ? '−' : '';
+  return `${sign}${Math.abs(rounded).toFixed(decimals)}%`;
+}
+
+/** Compact tonnage: 1250 → "1.3k", 940 → "940". */
+export function formatTonnage(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
+}

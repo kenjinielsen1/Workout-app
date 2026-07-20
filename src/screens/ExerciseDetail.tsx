@@ -13,7 +13,8 @@ import { LineChart, type LinePoint } from '../components/LineChart';
 import { BarChart } from '../components/BarChart';
 import { SessionHistory } from '../components/SessionHistory';
 import { VolumeView, type VolumeRow } from '../components/VolumeView';
-import { formatE1RM, formatWeight, toDisplay, type WeightUnit } from '../lib/units';
+import { EmptyState } from '../components/EmptyState';
+import { formatE1RM, formatPercent, formatTonnage, formatWeight, toDisplay, type WeightUnit } from '../lib/units';
 
 export interface DetailExercise {
   name: string;
@@ -35,7 +36,20 @@ interface ExerciseDetailProps {
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-const fmtTonnage = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`);
+
+/** A faint set of axes drawn behind the empty-chart invitation — the frame the
+ *  strength curve will fill, rather than a blank rectangle (POLISH.md §1). */
+function AxesHint() {
+  return (
+    <svg viewBox="0 0 200 90" className="h-full w-full" preserveAspectRatio="none" aria-hidden>
+      <line x1="18" y1="6" x2="18" y2="78" stroke="var(--hairline)" strokeWidth="1.5" />
+      <line x1="18" y1="78" x2="194" y2="78" stroke="var(--hairline)" strokeWidth="1.5" />
+      {[24, 42, 60].map((y) => (
+        <line key={y} x1="18" y1={y} x2="194" y2={y} stroke="var(--hairline)" strokeWidth="0.75" strokeDasharray="2 5" />
+      ))}
+    </svg>
+  );
+}
 
 function StatTile({ label, value, sub }: { label: string; value: string; sub?: React.ReactNode }) {
   return (
@@ -67,14 +81,31 @@ export function ExerciseDetail({ exercise, profile, sessions, volumeRows = [] }:
   }, [sessions, exercise, profile, unit]);
 
   const change = summary.e1rmChange;
-  const changeText =
-    change === null ? '—' : `${change >= 0 ? '+' : ''}${(change * 100).toFixed(1)}%`;
+  const changeText = change === null ? '—' : formatPercent(change, 1);
   const changeColor =
     change === null
       ? 'text-neutral-400'
       : change >= 0
         ? 'text-[var(--viz-good)]'
         : 'text-amber-600 dark:text-amber-400';
+
+  // First run for this lift: no history yet. Don't render empty charts — invite
+  // the first session and show the frame the data will fill (POLISH.md §1).
+  if (sessions.length === 0) {
+    return (
+      <div className="mx-auto flex min-h-full max-w-md flex-col gap-5 px-4 py-6 text-neutral-900 dark:text-neutral-50">
+        <header className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold">{exercise.name}</h1>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Not logged yet</p>
+        </header>
+        <EmptyState
+          title="Your strength curve starts here"
+          body="Log a few sessions and your estimated 1RM, tonnage, rep maxes, and PRs show up on this screen."
+          frame={<AxesHint />}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col gap-5 px-4 py-6 text-neutral-900 dark:text-neutral-50">
@@ -93,7 +124,7 @@ export function ExerciseDetail({ exercise, profile, sessions, volumeRows = [] }:
           sub={<span className={changeColor}>{changeText} since start</span>}
         />
         <StatTile label="Best e1RM" value={summary.bestE1RM ? `${formatE1RM(summary.bestE1RM, unit)} ${unit}` : '—'} />
-        <StatTile label="Total tonnage" value={`${fmtTonnage(toDisplay(summary.totalTonnage, unit))} ${unit}`} />
+        <StatTile label="Total tonnage" value={`${formatTonnage(toDisplay(summary.totalTonnage, unit))} ${unit}`} />
         <StatTile label="PRs" value={`${prs.length}`} />
       </section>
 
@@ -121,7 +152,7 @@ export function ExerciseDetail({ exercise, profile, sessions, volumeRows = [] }:
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-neutral-600 dark:text-neutral-300">Tonnage per session</h2>
-        <BarChart bars={tonnagePoints} ariaLabel="Tonnage per session" formatY={fmtTonnage} />
+        <BarChart bars={tonnagePoints} ariaLabel="Tonnage per session" formatY={formatTonnage} />
       </section>
 
       {rms.length > 0 && (

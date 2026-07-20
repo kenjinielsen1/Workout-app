@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Goal } from '../lib/types';
 import type { Profile } from '../data/domain';
 import { fromInput, roundDisplay, type PlateSystem, type WeightUnit } from '../lib/units';
+import { haptic, hapticsEnabled, setHapticsEnabled } from '../lib/haptics';
 
 interface SettingsProps {
   profile: Profile;
@@ -39,6 +40,9 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
   const [sessionsPerWeek, setSessionsPerWeek] = useState(profile.sessions_per_week ?? 3);
   const [warmupEnabled, setWarmupEnabled] = useState(profile.warmup_enabled);
   const [periodizationEnabled, setPeriodizationEnabled] = useState(profile.periodization_enabled);
+  // Haptics is a per-device preference (not synced), so it's read/written straight
+  // to localStorage rather than the profile.
+  const [haptics, setHaptics] = useState(hapticsEnabled());
   const [unit, setUnit] = useState<WeightUnit>(profile.weight_unit);
   const [plateSystem, setPlateSystem] = useState<PlateSystem>(profile.plate_system);
   // Bodyweight is edited in the display unit; stored in lb.
@@ -205,7 +209,7 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
               checked={warmupEnabled}
               aria-label="Prescribe warm-up sets"
               onChange={(e) => setWarmupEnabled(e.target.checked)}
-              className="h-6 w-6 rounded accent-emerald-600"
+              className="h-6 w-6 rounded accent-neutral-100"
             />
           </label>
 
@@ -219,7 +223,26 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
               checked={periodizationEnabled}
               aria-label="Planned periodization"
               onChange={(e) => setPeriodizationEnabled(e.target.checked)}
-              className="h-6 w-6 rounded accent-emerald-600"
+              className="h-6 w-6 rounded accent-neutral-100"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span className="flex flex-col">
+              <span className="font-medium">Haptics</span>
+              <span className="text-xs text-neutral-400">A short buzz when a set logs, so you feel it register with chalky hands. This device only.</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={haptics}
+              aria-label="Haptics"
+              onChange={(e) => {
+                const on = e.target.checked;
+                setHaptics(on);
+                setHapticsEnabled(on);
+                if (on) haptic('tick'); // let them feel what they just turned on
+              }}
+              className="h-6 w-6 rounded accent-neutral-100"
             />
           </label>
 

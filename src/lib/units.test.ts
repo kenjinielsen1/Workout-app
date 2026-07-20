@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatPercent,
+  formatTonnage,
   formatWeight,
   formatWeightUnit,
   fromInput,
@@ -7,6 +9,23 @@ import {
   roundDisplay,
   toDisplay,
 } from './units';
+
+describe('display formatting (POLISH.md §5 — round at the render boundary)', () => {
+  it('formatPercent rounds and signs, never leaking float artifacts', () => {
+    expect(formatPercent(0.032, 1)).toBe('+3.2%');
+    expect(formatPercent(-0.048, 1)).toBe('−4.8%'); // real minus glyph
+    expect(formatPercent(0)).toBe('0%');
+    // 0.077 * 100 = 7.700000000000001 → must not reach the screen.
+    expect(formatPercent(0.077, 1)).toBe('+7.7%');
+    expect(formatPercent(0.031)).toBe('+3%'); // default 0 decimals
+  });
+
+  it('formatTonnage compacts thousands and rounds the rest', () => {
+    expect(formatTonnage(1250)).toBe('1.3k');
+    expect(formatTonnage(940.4)).toBe('940');
+    expect(formatTonnage(0)).toBe('0');
+  });
+});
 
 describe('unit conversion (UNITS.md — convert only at the edges)', () => {
   it('toDisplay / fromInput are inverses in kg (no rounding)', () => {

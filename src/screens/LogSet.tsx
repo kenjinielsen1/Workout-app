@@ -22,6 +22,7 @@ import { RirSlider } from '../components/RirSlider';
 import { PlateChips } from '../components/PlateChips';
 import { SessionHistory } from '../components/SessionHistory';
 import { PrCelebration } from '../components/PrCelebration';
+import { haptic } from '../lib/haptics';
 import { useRestTimer } from '../hooks/useRestTimer';
 
 export interface LogSetExercise {
@@ -161,7 +162,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     onDeleteSet?.(id);
   };
 
-  const commit = (s: Omit<LoggedSet, 'set_number' | 'id'>) => {
+  const commit = (s: Omit<LoggedSet, 'set_number' | 'id'>, opts?: { affirm?: boolean }) => {
     // e1RM PR: a countable set that beats the running best. Fire once per new best.
     let is_pr = false;
     const e = setE1RM({ weight_lb: s.weight_lb, reps: s.reps, is_warmup: s.is_warmup, failed: s.failed }, exercise, profile);
@@ -173,6 +174,12 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     } else if (!s.is_warmup) {
       setPrCelebration(null); // a normal working set clears a stale celebration
     }
+
+    // Tactile confirm the instant it registers (POLISH.md §2): a PR is the
+    // strongest buzz, a miss is soft (acknowledged, not punished), hitting target
+    // is affirmative, a plain log ticks. The logged row appearing is the visual
+    // fallback where the Vibration API is unsupported (iOS).
+    haptic(is_pr ? 'strong' : s.failed ? 'soft' : opts?.affirm ? 'affirm' : 'tick');
 
     const logged: LoggedSet = { ...s, id: newId(), set_number: sets.length + 1, is_pr, pain };
     setSets((prev) => [...prev, logged]);
@@ -204,13 +211,16 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   const hitTarget = () => {
     setWeight(target.target_weight_lb);
     setReps(target.target_reps);
-    commit({
-      weight_lb: target.target_weight_lb,
-      reps: target.target_reps,
-      rir,
-      is_warmup: false,
-      failed: false,
-    });
+    commit(
+      {
+        weight_lb: target.target_weight_lb,
+        reps: target.target_reps,
+        rir,
+        is_warmup: false,
+        failed: false,
+      },
+      { affirm: true },
+    );
   };
 
   const markFailed = () => {

@@ -35,6 +35,7 @@ import { LogSet, type LoggedSet } from './LogSet';
 import { ExerciseDetail } from './ExerciseDetail';
 import { ExercisePicker, type PickerExercise } from '../components/ExercisePicker';
 import { PairBar, type PairCell } from '../components/PairBar';
+import { EmptyState } from '../components/EmptyState';
 import { WorkoutLog, type WorkoutLogEntry } from '../components/WorkoutLog';
 import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCheckIn';
 import { PlateauCard } from '../components/PlateauCard';
@@ -58,6 +59,7 @@ export function Home() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [aliasById, setAliasById] = useState<Map<string, string[]>>(new Map());
   const [selectedId, setSelectedId] = useState<string>('');
+  const [loaded, setLoaded] = useState(false); // tell "still loading" from "loaded, empty"
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allSessions, setAllSessions] = useState<AllSession[]>([]);
   const [target, setTarget] = useState<SessionTarget | null>(null);
@@ -188,6 +190,7 @@ export function Home() {
       setAliasById(new Map(searchable.map((s) => [s.id, s.aliases])));
       setOverrides(new Map(ovr.map((o) => [o.exercise_id, o])));
       setSelectedId((cur) => cur || ex[0]?.id || '');
+      setLoaded(true);
     });
     return () => {
       active = false;
@@ -693,8 +696,35 @@ export function Home() {
     }));
   }, [allSessions, workoutStartedAt, index]);
 
+  // Loaded, but the catalog somehow came back empty (e.g. Supabase mode before the
+  // server catalog syncs). Name the space and offer the one action (POLISH.md §1).
+  if (loaded && profile && exercises.length === 0) {
+    return (
+      <div className="grid min-h-full place-items-center px-6">
+        <EmptyState
+          title="Add your first movement"
+          body="Pick a lift and the app starts learning your numbers — what to lift next, when to push, when to hold."
+          action={{ label: 'Add an exercise', onClick: () => { setPickerMode('switch'); setPickerOpen(true); } }}
+        />
+        {pickerOpen && (
+          <ExercisePicker
+            exercises={pickerExercises}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onCreate={handleCreateExercise}
+            onClose={() => setPickerOpen(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
   if (!profile || !selected || !target) {
-    return <div className="grid min-h-full place-items-center text-neutral-400">Loading…</div>;
+    return (
+      <div className="grid min-h-full place-items-center text-neutral-500">
+        <span className="animate-pulse text-sm">Loading your session…</span>
+      </div>
+    );
   }
 
   return (
