@@ -33,8 +33,18 @@ describe('haptics (POLISH.md §2)', () => {
     expect(navigator.vibrate).toHaveBeenCalledOnce();
   });
 
-  it('is a silent no-op where the Vibration API is unsupported (iOS PWA)', () => {
-    vi.stubGlobal('navigator', {}); // no vibrate
+  it('falls back to the iOS <input switch> haptic where the Vibration API is absent', () => {
+    vi.stubGlobal('navigator', {}); // no vibrate (iOS)
     expect(() => haptic('strong')).not.toThrow();
+    // The iOS system-haptic surface is mounted and toggled.
+    expect(document.querySelector('label input[switch]')).not.toBeNull();
+  });
+
+  it('does not touch the iOS fallback when haptics are off', () => {
+    document.querySelectorAll('label input[switch]').forEach((el) => el.closest('label')?.remove());
+    vi.stubGlobal('navigator', {});
+    setHapticsEnabled(false);
+    haptic('tick');
+    expect(document.querySelector('label input[switch]')).toBeNull();
   });
 });

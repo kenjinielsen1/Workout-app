@@ -2,12 +2,20 @@
 // on a rack, poor sightline — the user needs to FEEL a tap register or they tap
 // again and double-log.
 //
-// This uses the Web Vibration API, which fires real haptics on Android. iOS PWA
-// ignores navigator.vibrate(), so every caller ALSO drives a visible state change
-// (a logged row appears, a button depresses): the tactile layer is an enhancement,
-// never the sole confirmation. The setting is a per-DEVICE preference (haptics is
-// a property of the phone in your hand, not the account), so it lives in
-// localStorage and is never synced.
+// Two mechanisms, because the platforms differ:
+//   · Android / standards: the Web Vibration API (navigator.vibrate) — rich
+//     patterns, fires from any context.
+//   · iOS (17.4+): no Vibration API at all, but toggling a hidden
+//     <input type="checkbox" switch> plays a system haptic. It ONLY fires inside a
+//     user gesture and gives ONE fixed haptic (no intensity variation). Every
+//     tap-driven call here runs inside a gesture (Hit target / Log set / a PR
+//     committed from that tap), so those buzz; a non-gesture call (rest-timer
+//     expiry) can't buzz on iOS — the notification covers that case.
+//
+// Either way every caller ALSO drives a visible state change (a logged row appears,
+// a button depresses): the tactile layer is an enhancement, never the sole confirm.
+// The setting is a per-DEVICE preference (haptics is a property of the phone in your
+// hand, not the account), so it lives in localStorage and is never synced.
 
 const KEY = 'po:haptics';
 
@@ -41,13 +49,44 @@ export function setHapticsEnabled(on: boolean): void {
   }
 }
 
-/** Fire a haptic of the given intent. No-op when disabled or unsupported (iOS);
- *  the caller's visual state change is the guaranteed confirmation. */
+// The iOS haptic surface: a single hidden switch input. Toggling it (via a click
+// inside a user gesture) plays the system selection haptic on iOS 17.4+. Created
+// lazily and reused; display:none is fine — the haptic rides the toggle, not paint.
+let iosSwitch: HTMLLabelElement | null = null;
+function iosHapticFallback(): void {
+  if (typeof document === 'undefined') return;
+  if (!iosSwitch) {
+    const label = document.createElement('label');
+    label.setAttribute('aria-hidden', 'true');
+    label.style.display = 'none';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.setAttribute('switch', ''); // iOS 17.4+ switch control
+    input.tabIndex = -1;
+    label.appendChild(input);
+    (document.body ?? document.head).appendChild(label);
+    iosSwitch = label;
+  }
+  try {
+    iosSwitch.click();
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Fire a haptic of the given intent. No-op when disabled. Uses the Vibration API
+ *  where present (Android), else the iOS <input switch> trick. The caller's visible
+ *  state change is the guaranteed confirmation on any platform. */
 export function haptic(kind: HapticKind): void {
   if (!hapticsEnabled()) return;
-  try {
-    navigator.vibrate?.(PATTERNS[kind]);
-  } catch {
-    /* unsupported / blocked — the visual fallback carries it */
+  const nav = typeof navigator !== 'undefined' ? navigator : undefined;
+  if (nav && typeof nav.vibrate === 'function') {
+    try {
+      nav.vibrate(PATTERNS[kind]);
+      return;
+    } catch {
+      /* fall through to the iOS path */
+    }
   }
+  iosHapticFallback();
 }
