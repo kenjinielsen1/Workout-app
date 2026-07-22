@@ -357,4 +357,19 @@ describe('LogSet — exercise pairing (PAIRING.md)', () => {
     await user.click(screen.getByRole('button', { name: /hit target/i }));
     expect(screen.queryByText(/next up/i)).not.toBeInTheDocument();
   });
+
+  it('keeps the one running rest visible after switching to the paired exercise', async () => {
+    const user = userEvent.setup();
+    const lateral = { name: 'Lateral Raise', equipment: 'dumbbell' as const, load_type: 'per_hand' as const, default_increment_lb: 5, is_compound: false };
+
+    // Log a set on A → a rest starts, leading into B.
+    const a = render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} priorBestE1RM={1000} nextUpName="Lateral Raise" />);
+    await user.click(screen.getByRole('button', { name: 'Hit target' }));
+    expect(screen.getByLabelText('rest timer')).toBeInTheDocument();
+    a.unmount(); // switching the active lift re-mounts LogSet (Home keys on the id)
+
+    // On B — no set logged in this mount — the SAME rest is still counting down.
+    render(<LogSet userId="u1" exercise={lateral} profile={profile} target={{ target_weight_lb: 20, target_reps: 15, target_sets: 3 }} priorBestE1RM={1000} nextUpName="Barbell Back Squat" />);
+    expect(screen.getByLabelText('rest timer')).toBeInTheDocument();
+  });
 });

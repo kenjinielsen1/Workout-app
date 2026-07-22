@@ -150,6 +150,10 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   // Wall-clock rest timer: survives lock/close and notifies at zero (BUGFIXES.md).
   const timer = useRestTimer(userId);
   const showTimer = timer.resting || timer.done;
+  // The exercise this rest leads into, from the PERSISTED rest so it's right after
+  // switching lifts. Hidden once it's the current lift (an unpaired rest, or after
+  // you've already switched onto it) — no redundant "next up · <this lift>".
+  const restNextUp = timer.exerciseName && timer.exerciseName !== exercise.name ? timer.exerciseName : undefined;
 
   // The set-logged confirmation clears itself after a beat.
   useEffect(() => {
@@ -336,11 +340,19 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
         <PrCelebration e1rm={prCelebration.e1rm} prev={prCelebration.prev} unit={unit} />
       )}
 
-      {nextNote && (
+      {/* The rest timer renders whenever a rest is active — NOT gated on nextNote,
+          which is per-mount and resets when you switch exercises. That way one
+          running rest stays visible as you alternate a pair or pick another lift.
+          The "next up" label reads from the persisted rest (not the live prop), so
+          it's correct across the switch; it hides once you're already on that
+          exercise (stored name === current). */}
+      {(nextNote || showTimer) && (
         <div className="flex items-center justify-between gap-3 rounded-2xl bg-neutral-100 px-4 py-3 dark:bg-neutral-800">
-          <div className="flex flex-col">
-            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Next set</span>
-            <span className="text-sm font-semibold">{nextNote}</span>
+          <div className="flex min-w-0 flex-col">
+            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+              {nextNote ? 'Next set' : 'Resting'}
+            </span>
+            {nextNote && <span className="truncate text-sm font-semibold">{nextNote}</span>}
           </div>
           {showTimer && (
             <div className="flex flex-col items-end gap-1">
@@ -354,9 +366,9 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
               >
                 {timer.resting ? formatRest(timer.remaining) : 'rest done'}
               </button>
-              {nextUpName && (
+              {restNextUp && (
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  next up · {nextUpName}
+                  next up · {restNextUp}
                 </span>
               )}
             </div>

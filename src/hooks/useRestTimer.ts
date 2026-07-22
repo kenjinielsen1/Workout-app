@@ -35,6 +35,9 @@ export interface UseRestTimer {
   done: boolean;
   /** Original rest length, for progress display. */
   durationSec: number;
+  /** The exercise this rest leads into (the "next up" label). Survives switching
+   *  the active lift, since it's read from the persisted rest, not a live prop. */
+  exerciseName: string | undefined;
   /** Notification capability snapshot (drives the iOS install / permission UI). */
   capability: NotifyCapability;
   /** Begin a rest of `durationSec`. Requests permission on first use (gesture). */
@@ -146,6 +149,7 @@ export function useRestTimer(userId: string): UseRestTimer {
     resting: !!state && !isExpired(state, now),
     done: !!state && isExpired(state, now),
     durationSec: state?.durationSec ?? 0,
+    exerciseName: state?.exerciseName,
     capability,
     start,
     dismiss,
