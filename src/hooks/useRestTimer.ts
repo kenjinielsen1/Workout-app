@@ -25,6 +25,7 @@ import {
 } from '../lib/restNotify';
 import { cancelServerPush, scheduleServerPush } from '../lib/push';
 import { haptic } from '../lib/haptics';
+import { playCue } from '../lib/sound';
 
 export interface UseRestTimer {
   /** Seconds remaining (0 once elapsed). Derived from the wall clock. */
@@ -68,6 +69,7 @@ export function useRestTimer(userId: string): UseRestTimer {
       setState(updated);
       persistRest(userId, updated);
       haptic('affirm'); // the phone may be face-down on a bench (POLISH.md §2)
+      playCue('affirm'); // audible rest-over chime (plays on iOS once audio unlocked)
       void showRestCompleteNow();
     },
     [userId],

@@ -3,6 +3,7 @@ import type { Goal } from '../lib/types';
 import type { Profile } from '../data/domain';
 import { fromInput, roundDisplay, type PlateSystem, type WeightUnit } from '../lib/units';
 import { haptic, hapticsEnabled, setHapticsEnabled } from '../lib/haptics';
+import { playCue, setSoundEnabled, soundEnabled } from '../lib/sound';
 
 interface SettingsProps {
   profile: Profile;
@@ -43,6 +44,7 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
   // Haptics is a per-device preference (not synced), so it's read/written straight
   // to localStorage rather than the profile.
   const [haptics, setHaptics] = useState(hapticsEnabled());
+  const [sound, setSound] = useState(soundEnabled());
   const [unit, setUnit] = useState<WeightUnit>(profile.weight_unit);
   const [plateSystem, setPlateSystem] = useState<PlateSystem>(profile.plate_system);
   // Bodyweight is edited in the display unit; stored in lb.
@@ -241,6 +243,25 @@ export function Settings({ profile, onSave, onClose }: SettingsProps) {
                 setHaptics(on);
                 setHapticsEnabled(on);
                 if (on) haptic('tick'); // let them feel what they just turned on
+              }}
+              className="h-6 w-6 rounded accent-neutral-100"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span className="flex flex-col">
+              <span className="font-medium">Sound cues</span>
+              <span className="text-xs text-neutral-400">A short tone when a set logs and when rest ends — the audible confirm on iPhone, where haptics aren’t available. This device only.</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={sound}
+              aria-label="Sound cues"
+              onChange={(e) => {
+                const on = e.target.checked;
+                setSound(on);
+                setSoundEnabled(on);
+                if (on) playCue('affirm'); // let them hear what they just turned on
               }}
               className="h-6 w-6 rounded accent-neutral-100"
             />

@@ -24,6 +24,7 @@ import { SessionHistory } from '../components/SessionHistory';
 import { PrCelebration } from '../components/PrCelebration';
 import { FirstTimeHint } from '../components/FirstTimeHint';
 import { haptic } from '../lib/haptics';
+import { playCue } from '../lib/sound';
 import { useRestTimer } from '../hooks/useRestTimer';
 
 export interface LogSetExercise {
@@ -196,7 +197,9 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     // strongest buzz, a miss is soft (acknowledged, not punished), hitting target
     // is affirmative, a plain log ticks. The logged row appearing is the visual
     // fallback where the Vibration API is unsupported (iOS).
-    haptic(is_pr ? 'strong' : s.failed ? 'soft' : opts?.affirm ? 'affirm' : 'tick');
+    const cue = is_pr ? 'strong' : s.failed ? 'soft' : opts?.affirm ? 'affirm' : 'tick';
+    haptic(cue); // Android buzz (no-op on iOS)
+    playCue(cue); // audible cue — the iOS-viable feedback (opt-out)
 
     // Visible confirmation for every log (the PR gets the copper moment instead).
     if (!is_pr) {
