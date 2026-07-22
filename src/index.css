@@ -134,6 +134,18 @@ h2 {
   animation: row-in 0.2s ease-out;
 }
 
+/* Set-logged confirmation (POLISH.md §2, visual path). The tactile confirm iOS
+   PWAs can't give: an unmistakable chalk bar right at the thumb. Ends visible and
+   is removed by a JS timer, so a reduced-motion viewer still sees it (the guard
+   only zeroes the entrance, never the presence). */
+@keyframes confirm-pop {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.confirm-pop {
+  animation: confirm-pop 0.16s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -117,6 +117,10 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   const [nextNote, setNextNote] = useState<string | null>(null);
   const [prCelebration, setPrCelebration] = useState<{ e1rm: number; prev: number } | null>(null);
   const [pendingBig, setPendingBig] = useState<{ set: Omit<LoggedSet, 'set_number' | 'id'> } | null>(null);
+  // Visible set-logged confirmation — the "it registered" signal on platforms that
+  // can't buzz (iOS PWA). `n` retriggers the animation on repeat identical logs.
+  const [confirm, setConfirm] = useState<{ text: string; n: number } | null>(null);
+  const confirmSeq = useRef(0);
   const [showHistory, setShowHistory] = useState(false);
   const [warmupsDone, setWarmupsDone] = useState<Set<number>>(new Set());
   const [pain, setPain] = useState<PainType | null>(null);
@@ -146,6 +150,13 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   // Wall-clock rest timer: survives lock/close and notifies at zero (BUGFIXES.md).
   const timer = useRestTimer(userId);
   const showTimer = timer.resting || timer.done;
+
+  // The set-logged confirmation clears itself after a beat.
+  useEffect(() => {
+    if (!confirm) return;
+    const t = setTimeout(() => setConfirm(null), 1100);
+    return () => clearTimeout(t);
+  }, [confirm]);
 
   // Keep the inputs on the target until the first set is logged. Switching
   // exercises recomputes the target asynchronously, so the fresh number arrives
@@ -182,6 +193,12 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     // is affirmative, a plain log ticks. The logged row appearing is the visual
     // fallback where the Vibration API is unsupported (iOS).
     haptic(is_pr ? 'strong' : s.failed ? 'soft' : opts?.affirm ? 'affirm' : 'tick');
+
+    // Visible confirmation for every log (the PR gets the copper moment instead).
+    if (!is_pr) {
+      const text = s.is_warmup ? 'Warm-up logged' : s.failed ? 'Miss logged' : opts?.affirm ? 'Hit target' : 'Set logged';
+      setConfirm({ text, n: ++confirmSeq.current });
+    }
 
     const logged: LoggedSet = { ...s, id: newId(), set_number: sets.length + 1, is_pr, pain };
     setSets((prev) => [...prev, logged]);
@@ -454,6 +471,16 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
               Go back
             </button>
           </div>
+        </div>
+      )}
+
+      {confirm && (
+        <div
+          key={confirm.n}
+          role="status"
+          className="confirm-pop flex items-center justify-center gap-2 rounded-2xl bg-neutral-100 py-3 text-sm font-bold text-neutral-900"
+        >
+          <span aria-hidden>✓</span> {confirm.text}
         </div>
       )}
 

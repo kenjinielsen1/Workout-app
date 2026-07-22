@@ -193,8 +193,23 @@ describe('LogSet screen', () => {
     const user = userEvent.setup();
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} priorBestE1RM={1000} />);
     await user.click(screen.getByRole('button', { name: /hit target/i }));
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/new best/i)).not.toBeInTheDocument(); // no PR celebration
     expect(screen.queryByText('PR')).not.toBeInTheDocument();
+  });
+
+  it('shows a visible confirmation on every logged set (POLISH.md §2 visual path)', async () => {
+    const user = userEvent.setup();
+    // priorBestE1RM high so it's an ordinary log, not a PR (which owns the copper moment).
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} priorBestE1RM={1000} />);
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.getByRole('status')).toHaveTextContent(/set logged/i);
+  });
+
+  it('names a hit-target confirmation distinctly', async () => {
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} priorBestE1RM={1000} />);
+    await user.click(screen.getByRole('button', { name: /hit target/i }));
+    expect(screen.getByRole('status')).toHaveTextContent(/hit target/i);
   });
 
   it('reveals per-exercise history in one tap from Log Set', async () => {
