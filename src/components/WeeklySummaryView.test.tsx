@@ -11,7 +11,7 @@ const input: WeeklySummaryInput = {
   weekStart: '2026-07-13', weekEnd: '2026-07-19', generatedAt: '2026-07-20T02:00:00Z', unit: 'lb',
   sessions: 3, hardSets: 40, tonnageLb: 60000, daysTrained: 3, daysPlanned: 4,
   plannedDeload: false, hasFourWeekHistory: true,
-  progression: [{ exercise: 'Bench Press', primaryMuscle: 'pectorals', currentE1RMLb: 225, deltaLastWeekLb: 0, delta4wLb: 0, move: 'held', reason: '', weeksFlat: 4 }],
+  progression: [{ exercise: 'Bench Press', primaryMuscle: 'pectorals', currentE1RMLb: 225, deltaLastWeekLb: 0, delta4wLb: 0, move: 'held', reason: '', weeksFlat: 4, e1rmSpark: []  }],
   volume: [{ muscle: 'pectorals', hardSets: 14, landmarks: landmarksFor('pectorals') }],
   balance: [{ label: 'Push : pull', ratio: '2.8 : 1' }],
   fatigue: { acwr: 1.1, acwrTrend: 'rising', avgRpe: 8, avgReadiness: null, blockLabel: null },
@@ -22,8 +22,19 @@ const input: WeeklySummaryInput = {
 describe('WeeklySummaryView (DESIGN.md)', () => {
   it('renders the readout with the flat lift stated and the PR present', () => {
     render(<WeeklySummaryView summary={buildWeeklySummary(input)} />);
-    expect(screen.getByText(/unchanged for 4 weeks/)).toBeInTheDocument();
+    expect(screen.getByText('unchanged 4 weeks')).toBeInTheDocument(); // visual status chip
     expect(screen.getByText(/New best — Bench Press 240 lb e1RM\./)).toBeInTheDocument();
+  });
+
+  it('shows a sparkline for a lift with multi-week e1RM history', () => {
+    const withSpark = buildWeeklySummary({
+      ...input,
+      progression: [{ ...input.progression[0]!, weeksFlat: 0, move: 'increased', deltaLastWeekLb: 5, e1rmSpark: [210, 215, 220, 225] }],
+    });
+    const { container } = render(<WeeklySummaryView summary={withSpark} />);
+    expect(container.querySelector('svg path')).toBeInTheDocument(); // the trend line
+    expect(screen.getByText('increased load')).toBeInTheDocument();
+    expect(screen.getByText('+5 lb vs last week')).toBeInTheDocument();
   });
 
   it('uses copper ONLY on the PR section', () => {

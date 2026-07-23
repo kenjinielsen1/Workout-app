@@ -8,9 +8,11 @@
 // on-request lookup — no button, icon, badge, hint, or highlight may reveal them.
 
 import { useState } from 'react';
-import { progressionSuffix, summarySections, type WeeklySummary } from '../lib/weeklySummary';
+import { FLAT_WEEKS, progressionStatus, summarySections, type WeeklySummary } from '../lib/weeklySummary';
+import { formatE1RM, formatWeightUnit } from '../lib/units';
 import { VolumeView } from './VolumeView';
 import { VolumeLookupDrawer, type VolumeLookupContext } from './VolumeLookupDrawer';
+import { Sparkline } from './Sparkline';
 
 const fmtRange = (startISO: string, endISO: string) => {
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
@@ -53,14 +55,34 @@ export function WeeklySummaryView({ summary, lookup }: { summary: WeeklySummary;
               {section.title}
             </h2>
 
-            {isProgression && lookup ? (
-              <ul className="flex flex-col gap-1.5 text-sm">
-                {summary.progression.map((p, i) => (
-                  <li key={i} className="leading-snug tabular-nums text-neutral-300">
-                    <PlainTap label={p.exercise} onTap={open && p.primaryMuscle ? () => open(p.primaryMuscle!) : null} />
-                    {`: ${progressionSuffix(p, summary.unit, summary.plannedDeload, summary.hasFourWeekHistory)}`}
-                  </li>
-                ))}
+            {isProgression ? (
+              <ul className="flex flex-col gap-3">
+                {summary.progression.map((p, i) => {
+                  const flat = p.weeksFlat >= FLAT_WEEKS;
+                  const current = p.currentE1RMLb != null ? `${formatE1RM(p.currentE1RMLb, summary.unit)} ${summary.unit}` : '—';
+                  const d = p.deltaLastWeekLb;
+                  const delta =
+                    !flat && d != null && p.currentE1RMLb != null
+                      ? `${d > 0 ? '+' : d < 0 ? '−' : ''}${formatWeightUnit(Math.abs(Math.round(d)), summary.unit)} vs last week`
+                      : '';
+                  return (
+                    <li key={i} className="flex flex-col gap-0.5">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm font-medium text-neutral-200">
+                          <PlainTap label={p.exercise} onTap={open && p.primaryMuscle ? () => open(p.primaryMuscle!) : null} />
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Sparkline points={p.e1rmSpark} />
+                          <span className="text-base font-semibold tabular-nums text-neutral-100">{current}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-3 text-xs text-neutral-500">
+                        <span>{progressionStatus(p, summary.plannedDeload)}</span>
+                        {delta && <span className="tabular-nums text-neutral-400">{delta}</span>}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <ul className={`flex flex-col gap-1.5 ${isVolume ? 'text-[15px]' : 'text-sm'}`}>

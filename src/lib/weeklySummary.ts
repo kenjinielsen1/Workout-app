@@ -41,6 +41,16 @@ export interface SummaryProgression {
   reason: string;
   /** Consecutive weeks e1RM has not moved (0 when it moved this week). */
   weeksFlat: number;
+  /** Recent weekly best e1RMs (lb), oldest→newest, for the sparkline. */
+  e1rmSpark: number[];
+}
+
+/** The short, blunt status label for the visual row (report-only). */
+export function progressionStatus(p: SummaryProgression, plannedDeload: boolean): string {
+  if (p.weeksFlat >= FLAT_WEEKS) return `unchanged ${p.weeksFlat} weeks`;
+  if (p.move === 'increased') return 'increased load';
+  if (p.move === 'deloaded') return `deloaded${plannedDeload ? ' · planned' : p.reason ? ` · ${p.reason}` : ''}`;
+  return 'held';
 }
 
 export interface SummaryBalance {

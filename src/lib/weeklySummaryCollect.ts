@@ -128,7 +128,13 @@ export function collectWeeklySummary(args: CollectArgs): WeeklySummaryInput {
     // is second-person/forward-looking, so it's NOT surfaced verbatim — only the
     // fact of a planned vs. autoregulated deload.
     const reason = move === 'deloaded' ? (plannedDeload ? '' : 'an autoregulated back-off') : '';
-    progression.push({ exercise: ex.name, primaryMuscle: ex.primary_muscles[0] ?? null, currentE1RMLb: cur, deltaLastWeekLb, delta4wLb, move, reason, weeksFlat });
+    // Last ~8 weeks of weekly-best e1RM (weeks trained), oldest→newest, for the spark.
+    const e1rmSpark: number[] = [];
+    for (let w = 7; w >= 0; w--) {
+      const e = e1rmInWeek(pts, addWeeks(weekStart, -w));
+      if (e != null) e1rmSpark.push(Math.round(e));
+    }
+    progression.push({ exercise: ex.name, primaryMuscle: ex.primary_muscles[0] ?? null, currentE1RMLb: cur, deltaLastWeekLb, delta4wLb, move, reason, weeksFlat, e1rmSpark });
   }
   progression.sort((a, b) => a.exercise.localeCompare(b.exercise));
 
