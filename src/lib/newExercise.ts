@@ -5,7 +5,6 @@
 
 import type { CreateExerciseInput } from '../data/domain';
 import type { Equipment, LoadType } from './types';
-import type { MuscleGroup } from './muscleGroups';
 
 export const EQUIPMENT_OPTIONS: { value: Equipment; label: string }[] = [
   { value: 'barbell', label: 'Barbell' },
@@ -39,18 +38,6 @@ const INCREMENT: Record<Equipment, number> = {
   band: 5,
 };
 
-// A representative primary muscle per broad group, so the new lift files into the
-// right section of the picker.
-const GROUP_MUSCLE: Record<MuscleGroup, string[]> = {
-  Chest: ['pectorals'],
-  Back: ['lats'],
-  Shoulders: ['side_delts'],
-  Arms: ['biceps'],
-  Legs: ['quadriceps'],
-  Core: ['abs'],
-  Other: [],
-};
-
 export function slugify(name: string): string {
   return (
     name
@@ -63,7 +50,9 @@ export function slugify(name: string): string {
 export function buildNewExercise(opts: {
   name: string;
   equipment: Equipment;
-  muscleGroup: MuscleGroup;
+  /** The specific muscle this trains, so its hard sets count toward the right
+   *  muscle's volume (VOLUME.md) — not a coarse group stand-in. */
+  primaryMuscle: string;
 }): CreateExerciseInput {
   return {
     name: opts.name.trim(),
@@ -74,6 +63,6 @@ export function buildNewExercise(opts: {
     is_unilateral: false,
     default_increment_lb: INCREMENT[opts.equipment],
     fatigue_cost: 2,
-    primary_muscles: GROUP_MUSCLE[opts.muscleGroup],
+    primary_muscles: opts.primaryMuscle ? [opts.primaryMuscle] : [],
   };
 }

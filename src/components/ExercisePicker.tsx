@@ -4,6 +4,8 @@ import {
   groupExercisesByMuscle,
   groupForExercise,
   MUSCLE_GROUP_ORDER,
+  MUSCLES_IN_GROUP,
+  prettyMuscleName,
   type MuscleGroup,
 } from '../lib/muscleGroups';
 import { buildNewExercise, EQUIPMENT_OPTIONS } from '../lib/newExercise';
@@ -33,7 +35,7 @@ export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onCl
   // create form state
   const [name, setName] = useState('');
   const [equipment, setEquipment] = useState<Equipment>('barbell');
-  const [muscleGroup, setMuscleGroup] = useState<MuscleGroup>('Chest');
+  const [primaryMuscle, setPrimaryMuscle] = useState<string>('pectorals');
   const [dup, setDup] = useState<Match<PickerExercise> | null>(null);
 
   const grouped = useMemo(() => groupExercisesByMuscle(exercises), [exercises]);
@@ -68,7 +70,7 @@ export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onCl
       setDup(match); // "Did you mean …?"
       return;
     }
-    onCreate(buildNewExercise({ name: trimmed, equipment, muscleGroup }));
+    onCreate(buildNewExercise({ name: trimmed, equipment, primaryMuscle }));
     onClose();
   };
 
@@ -134,17 +136,22 @@ export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onCl
             </label>
 
             <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-neutral-500 dark:text-neutral-400">Muscle group</span>
+              <span className="font-medium text-neutral-500 dark:text-neutral-400">Primary muscle</span>
               <select
-                value={muscleGroup}
-                onChange={(e) => setMuscleGroup(e.target.value as MuscleGroup)}
-                aria-label="Muscle group"
+                value={primaryMuscle}
+                onChange={(e) => setPrimaryMuscle(e.target.value)}
+                aria-label="Primary muscle"
                 className="rounded-xl bg-neutral-100 px-3 py-2 text-base dark:bg-neutral-800"
               >
-                {MUSCLE_GROUP_ORDER.map((g) => (
-                  <option key={g} value={g}>{g}</option>
+                {MUSCLE_GROUP_ORDER.filter((g) => MUSCLES_IN_GROUP[g].length > 0).map((g) => (
+                  <optgroup key={g} label={g}>
+                    {MUSCLES_IN_GROUP[g].map((m) => (
+                      <option key={m} value={m}>{prettyMuscleName(m)}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
+              <span className="text-xs text-neutral-400">Sets you log count toward this muscle's weekly volume.</span>
             </label>
 
             {dup && (

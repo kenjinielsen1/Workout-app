@@ -46,6 +46,20 @@ export function groupForExercise(ex: { primary_muscles: string[] }): MuscleGroup
   return (first && MUSCLE_TO_GROUP[first]) || 'Other';
 }
 
+/** The fine-grained muscles in each broad group (inverse of MUSCLE_TO_GROUP), so a
+ *  quick-add can pick the ACTUAL muscle it trains — not a coarse group stand-in that
+ *  mis-attributes volume (VOLUME.md). 'Other' has none. */
+export const MUSCLES_IN_GROUP: Record<MuscleGroup, string[]> = MUSCLE_GROUP_ORDER.reduce(
+  (acc, g) => {
+    acc[g] = Object.entries(MUSCLE_TO_GROUP).filter(([, group]) => group === g).map(([muscle]) => muscle);
+    return acc;
+  },
+  {} as Record<MuscleGroup, string[]>,
+);
+
+/** "rear_delts" → "Rear delts", for muscle labels in the UI. */
+export const prettyMuscleName = (m: string): string => m.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 export interface GroupedExercises<T> {
   group: MuscleGroup;
   exercises: T[];

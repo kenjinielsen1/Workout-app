@@ -62,7 +62,8 @@ describe('ExercisePicker', () => {
     await user.click(screen.getByRole('button', { name: /new exercise/i }));
     await user.type(screen.getByRole('textbox', { name: /exercise name/i }), 'Cable Y-Raise');
     await user.selectOptions(screen.getByRole('combobox', { name: /equipment/i }), 'cable');
-    await user.selectOptions(screen.getByRole('combobox', { name: /muscle group/i }), 'Shoulders');
+    // The user picks the SPECIFIC muscle now, so volume attributes correctly.
+    await user.selectOptions(screen.getByRole('combobox', { name: /primary muscle/i }), 'rear_delts');
     await user.click(screen.getByRole('button', { name: /add exercise/i }));
 
     expect(onCreate).toHaveBeenCalledWith(
@@ -70,7 +71,7 @@ describe('ExercisePicker', () => {
         name: 'Cable Y-Raise',
         equipment: 'cable',
         load_type: 'total', // derived from cable
-        primary_muscles: ['side_delts'], // derived from Shoulders
+        primary_muscles: ['rear_delts'], // the exact muscle chosen — not a coarse group
       }),
     );
   });
