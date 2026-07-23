@@ -56,7 +56,18 @@ function Bar({ hardSets, lm, state }: { hardSets: number; lm: Landmarks; state: 
   );
 }
 
-export function VolumeView({ rows, title = "This week's volume" }: { rows: VolumeRow[]; title?: string }) {
+export function VolumeView({
+  rows,
+  title = "This week's volume",
+  onMuscleTap,
+}: {
+  rows: VolumeRow[];
+  title?: string;
+  /** When set, the muscle name becomes a plain tap target (VOLUME_SUGGESTIONS.md).
+   *  Deliberately carries NO distinguishing style — it inherits the label's look, so
+   *  it's invisible until looked for. */
+  onMuscleTap?: (muscle: string) => void;
+}) {
   if (rows.length === 0) return null;
   return (
     <section aria-label="Weekly volume" className="flex flex-col gap-3">
@@ -72,7 +83,13 @@ export function VolumeView({ rows, title = "This week's volume" }: { rows: Volum
               <div className="flex items-baseline justify-between text-sm">
                 <span className="flex items-center gap-1.5 font-medium">
                   <span className={`inline-block h-2 w-2 rounded-full ${DOT[state]}`} aria-hidden />
-                  {prettyMuscle(muscle)}
+                  {onMuscleTap ? (
+                    <button type="button" onClick={() => onMuscleTap(muscle)} className="border-0 bg-transparent p-0 font-[inherit] text-[inherit]">
+                      {prettyMuscle(muscle)}
+                    </button>
+                  ) : (
+                    prettyMuscle(muscle)
+                  )}
                 </span>
                 <span className="tabular-nums text-neutral-500 dark:text-neutral-400">
                   {Number(hardSets.toFixed(1))} <span className="text-xs">/ {landmarks.mev}–{landmarks.mrv}</span>

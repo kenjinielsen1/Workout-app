@@ -40,6 +40,7 @@ import { SyncNotice } from '../components/SyncNotice';
 import { FirstTimeHint } from '../components/FirstTimeHint';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 import { WeeklySummaryScreen } from '../components/WeeklySummaryScreen';
+import type { VolumeLookupContext } from '../components/VolumeLookupDrawer';
 import { buildWeeklySummary, type WeeklySummary } from '../lib/weeklySummary';
 import { collectWeeklySummary } from '../lib/weeklySummaryCollect';
 import { completedWeekStart, lastSeenWeek, markWeekSeen, shouldAutoShow } from '../lib/weeklySummaryTiming';
@@ -634,6 +635,32 @@ export function Home() {
     return overreachNudge({ upwardOverrides: 0, consecutiveDaysNoRest: streak, ignoredDeloads: 0 });
   }, [allSessions]);
 
+  // VOLUME_SUGGESTIONS.md: context for the on-request lookup — the live catalog +
+  // CURRENT safety state (fatigue/deload/freeze are about now, not the summary's week).
+  const lookupContext = useMemo<VolumeLookupContext | undefined>(() => {
+    if (!profile) return undefined;
+    const catalog = resolvedExercises.map((e) => ({
+      id: e.id, name: e.name, primary_muscles: e.primary_muscles, secondary_muscles: e.secondary_muscles,
+      equipment: e.equipment, movement_pattern: e.movement_pattern, is_compound: e.is_compound,
+    }));
+    // Equipment the user has actually logged — don't suggest gear they've never touched.
+    const accessibleEquipment = [...new Set(allSessions.map((s) => index.get(s.exercise_id)?.equipment).filter((x): x is Exercise['equipment'] => !!x))];
+    // A movement pattern is frozen if the most recent session for any exercise on it
+    // logged pain (SCOPE_SAFETY.md painFreezesExercise).
+    const latest = new Map<string, AllSession>();
+    for (const s of allSessions) {
+      const prev = latest.get(s.exercise_id);
+      if (!prev || s.performed_at > prev.performed_at) latest.set(s.exercise_id, s);
+    }
+    const frozenPatterns = [...new Set(
+      [...latest.values()]
+        .filter((s) => s.sets.some((set) => set.pain != null))
+        .map((s) => index.get(s.exercise_id)?.movement_pattern)
+        .filter((p): p is Exercise['movement_pattern'] => !!p),
+    )];
+    return { catalog, accessibleEquipment, frozenPatterns, fatigueFlagged: overreachMessage != null, plannedDeload: blockPhase?.deload ?? false };
+  }, [profile, resolvedExercises, allSessions, index, overreachMessage, blockPhase]);
+
   // Hypertrophy under-volume signal for the plateau breaker: a stall at adequate
   // load may be an under-volume problem — suggest adding a set before deloading.
   const underVolume = useMemo(() => {
@@ -1032,7 +1059,7 @@ export function Home() {
       )}
 
       {summaryOpen && (
-        <WeeklySummaryScreen summaries={summaries} index={summaryIdx} onIndex={setSummaryIdx} onClose={closeSummary} />
+        <WeeklySummaryScreen summaries={summaries} index={summaryIdx} onIndex={setSummaryIdx} onClose={closeSummary} lookup={lookupContext} />
       )}
 
       {!onboardingSeen && <SafetyOnboarding onAcknowledge={acknowledgeOnboarding} />}

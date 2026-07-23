@@ -15,8 +15,8 @@ const base = (over: Partial<WeeklySummaryInput> = {}): WeeklySummaryInput => ({
   plannedDeload: false,
   hasFourWeekHistory: true,
   progression: [
-    { exercise: 'Back Squat', currentE1RMLb: 315, deltaLastWeekLb: 5, delta4wLb: 15, move: 'increased', reason: '', weeksFlat: 0 },
-    { exercise: 'Bench Press', currentE1RMLb: 225, deltaLastWeekLb: 0, delta4wLb: 0, move: 'held', reason: 'readiness low', weeksFlat: 4 },
+    { exercise: 'Back Squat', primaryMuscle: 'quadriceps', currentE1RMLb: 315, deltaLastWeekLb: 5, delta4wLb: 15, move: 'increased', reason: '', weeksFlat: 0 },
+    { exercise: 'Bench Press', primaryMuscle: 'pectorals', currentE1RMLb: 225, deltaLastWeekLb: 0, delta4wLb: 0, move: 'held', reason: 'readiness low', weeksFlat: 4 },
   ],
   volume: [
     { muscle: 'pectorals', hardSets: 14, landmarks: landmarksFor('pectorals') },
@@ -27,6 +27,7 @@ const base = (over: Partial<WeeklySummaryInput> = {}): WeeklySummaryInput => ({
   balance: [{ label: 'Push : pull', ratio: '2.8 : 1' }],
   fatigue: { acwr: 1.15, acwrTrend: 'rising', avgRpe: 8.2, avgReadiness: 3.4, blockLabel: 'Accumulation — build volume · week 2 of 3' },
   prs: [{ exercise: 'Back Squat', e1rmLb: 315 }],
+  contributors: {},
   ...over,
 });
 
@@ -61,7 +62,7 @@ describe('weekly summary — blunt, not harsh (WEEKLY_SUMMARY.md)', () => {
 
   it('no softening or consoling on a low / flat week', () => {
     const text = allLines(base({ sessions: 2, daysTrained: 2, progression: [
-      { exercise: 'Bench Press', currentE1RMLb: 225, deltaLastWeekLb: 0, delta4wLb: 0, move: 'held', reason: '', weeksFlat: 5 },
+      { exercise: 'Bench Press', primaryMuscle: 'pectorals', currentE1RMLb: 225, deltaLastWeekLb: 0, delta4wLb: 0, move: 'held', reason: '', weeksFlat: 5 },
     ] }));
     for (const phrase of SOFTENING) expect(text.includes(phrase), `softened with "${phrase}"`).toBe(false);
   });

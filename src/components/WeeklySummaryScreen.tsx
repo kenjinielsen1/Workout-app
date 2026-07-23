@@ -4,15 +4,18 @@
 
 import type { WeeklySummary } from '../lib/weeklySummary';
 import { WeeklySummaryView } from './WeeklySummaryView';
+import type { VolumeLookupContext } from './VolumeLookupDrawer';
 
 interface Props {
   summaries: WeeklySummary[]; // newest first
   index: number;
   onIndex: (i: number) => void;
   onClose: () => void;
+  /** Context for the on-request volume lookup (VOLUME_SUGGESTIONS.md). */
+  lookup?: VolumeLookupContext;
 }
 
-export function WeeklySummaryScreen({ summaries, index, onIndex, onClose }: Props) {
+export function WeeklySummaryScreen({ summaries, index, onIndex, onClose, lookup }: Props) {
   const summary = summaries[index];
   if (!summary) return null;
   const older = index < summaries.length - 1; // further back exists
@@ -32,7 +35,7 @@ export function WeeklySummaryScreen({ summaries, index, onIndex, onClose }: Prop
       </header>
 
       <div className="flex-1 overflow-y-auto">
-        <WeeklySummaryView summary={summary} />
+        <WeeklySummaryView summary={summary} lookup={lookup} />
 
         {(older || newer) && (
           <nav className="mx-auto flex max-w-md items-center justify-between gap-2 px-4 pb-8">

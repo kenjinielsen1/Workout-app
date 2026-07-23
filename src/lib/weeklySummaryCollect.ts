@@ -12,6 +12,7 @@ import { acwr } from './features';
 import { blockPosition, isPlannedDeloadWeek, phaseIntent } from './periodization';
 import type { WeightUnit } from './units';
 import type { MovementPattern } from './types';
+import { reduceContributors } from './volumeSuggestions';
 import type { ProgressionMove, SummaryProgression, WeeklySummaryInput } from './weeklySummary';
 
 const DAY = 86_400_000;
@@ -127,7 +128,7 @@ export function collectWeeklySummary(args: CollectArgs): WeeklySummaryInput {
     // is second-person/forward-looking, so it's NOT surfaced verbatim — only the
     // fact of a planned vs. autoregulated deload.
     const reason = move === 'deloaded' ? (plannedDeload ? '' : 'an autoregulated back-off') : '';
-    progression.push({ exercise: ex.name, currentE1RMLb: cur, deltaLastWeekLb, delta4wLb, move, reason, weeksFlat });
+    progression.push({ exercise: ex.name, primaryMuscle: ex.primary_muscles[0] ?? null, currentE1RMLb: cur, deltaLastWeekLb, delta4wLb, move, reason, weeksFlat });
   }
   progression.sort((a, b) => a.exercise.localeCompare(b.exercise));
 
@@ -145,6 +146,22 @@ export function collectWeeklySummary(args: CollectArgs): WeeklySummaryInput {
       landmarks: personalLandmarks(muscle, profile.volume_calibration?.[muscle] ?? 0),
     }))
     .sort((a, b) => b.hardSets - a.hardSets || a.muscle.localeCompare(b.muscle));
+
+  // Per-exercise hard sets this week → per-muscle contributor breakdown (the
+  // reduce-side lookup, VOLUME_SUGGESTIONS.md). Stored so a re-read past week is exact.
+  const weekExercises = trainedIds.flatMap((id) => {
+    const ex = index.get(id);
+    if (!ex) return [];
+    const hs = weekSessions
+      .filter((s) => s.exercise_id === id)
+      .reduce((n, s) => n + s.sets.filter((set) => isHardSet(set, profile, goal)).length, 0);
+    return [{ id, name: ex.name, primary: ex.primary_muscles, secondary: ex.secondary_muscles, hardSets: hs }];
+  });
+  const contributors: Record<string, { id: string; name: string; sets: number }[]> = {};
+  for (const muscle of universe) {
+    const c = reduceContributors(muscle, weekExercises);
+    if (c.length) contributors[muscle] = c;
+  }
 
   // --- 4. balance ----------------------------------------------------------
   const pv = patternVolume(allSessions, index, profile, goal, isoStamp(weekEndT));
@@ -193,6 +210,7 @@ export function collectWeeklySummary(args: CollectArgs): WeeklySummaryInput {
     balance,
     fatigue: { acwr: acwrVal, acwrTrend: null, avgRpe, avgReadiness: null, blockLabel },
     prs,
+    contributors,
   };
 }
 

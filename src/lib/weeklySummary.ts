@@ -31,6 +31,8 @@ export interface SummaryVolumeRow {
 
 export interface SummaryProgression {
   exercise: string;
+  /** Primary muscle, so tapping the name in the readout can open its lookup. */
+  primaryMuscle: string | null;
   currentE1RMLb: number | null;
   deltaLastWeekLb: number | null;
   delta4wLb: number | null;
@@ -77,6 +79,9 @@ export interface WeeklySummaryInput {
   balance: SummaryBalance[];
   fatigue: SummaryFatigue;
   prs: SummaryPr[];
+  /** Per-muscle hard-set contributors this week (VOLUME_SUGGESTIONS.md reduce side).
+   *  Stored so the lookup is exact for a re-read past week. Keyed by raw muscle. */
+  contributors: Record<string, { id: string; name: string; sets: number }[]>;
 }
 
 export interface WeeklyVolumeState {
@@ -157,19 +162,7 @@ export function summarySections(s: WeeklySummary): SummarySection[] {
 
   // 2 — Progression: what moved. A flat lift is stated as flat.
   if (s.progression.length) {
-    const lines = s.progression.map((p) => {
-      const e1 = p.currentE1RMLb != null ? `e1RM ${formatE1RM(p.currentE1RMLb, u)} ${u}` : 'no working sets';
-      if (p.weeksFlat >= FLAT_WEEKS) {
-        return `${p.exercise}: ${e1}, unchanged for ${p.weeksFlat} weeks.`;
-      }
-      const delta =
-        p.deltaLastWeekLb != null && p.currentE1RMLb != null ? ` (${signed(p.deltaLastWeekLb, u)} vs last week)` : '';
-      const verb = p.move === 'increased' ? 'increased load' : p.move === 'deloaded' ? `deloaded${s.plannedDeload ? ' (planned)' : ''}` : 'held';
-      const four =
-        s.hasFourWeekHistory && p.delta4wLb != null ? ` ${signed(p.delta4wLb, u)} over 4 weeks.` : '';
-      const reason = p.reason ? ` ${p.reason}.` : '';
-      return `${p.exercise}: ${verb}. ${e1}${delta}.${four}${reason}`;
-    });
+    const lines = s.progression.map((p) => `${p.exercise}: ${progressionSuffix(p, u, s.plannedDeload, s.hasFourWeekHistory)}`);
     sections.push({ title: 'Progression', lines });
   }
 
@@ -213,6 +206,18 @@ export function summarySections(s: WeeklySummary): SummarySection[] {
   }
 
   return sections;
+}
+
+/** The progression line minus the leading "{exercise}: " — shared by the prose and
+ *  the view (which renders the exercise name as its own tappable element). */
+export function progressionSuffix(p: SummaryProgression, unit: WeightUnit, plannedDeload: boolean, hasFourWeekHistory: boolean): string {
+  const e1 = p.currentE1RMLb != null ? `e1RM ${formatE1RM(p.currentE1RMLb, unit)} ${unit}` : 'no working sets';
+  if (p.weeksFlat >= FLAT_WEEKS) return `${e1}, unchanged for ${p.weeksFlat} weeks.`;
+  const delta = p.deltaLastWeekLb != null && p.currentE1RMLb != null ? ` (${signed(p.deltaLastWeekLb, unit)} vs last week)` : '';
+  const verb = p.move === 'increased' ? 'increased load' : p.move === 'deloaded' ? `deloaded${plannedDeload ? ' (planned)' : ''}` : 'held';
+  const four = hasFourWeekHistory && p.delta4wLb != null ? ` ${signed(p.delta4wLb, unit)} over 4 weeks.` : '';
+  const reason = p.reason ? ` ${p.reason}.` : '';
+  return `${verb}. ${e1}${delta}.${four}${reason}`;
 }
 
 const round1 = (n: number): string => String(Number(n.toFixed(1)));
