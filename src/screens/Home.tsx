@@ -222,7 +222,10 @@ export function Home() {
       const all = await store.getAllSessions(userId);
       const nowISO = new Date().toISOString();
       const cw = completedWeekStart(nowISO);
-      if (all.length > 0 && !(await store.getWeeklySummary(userId, cw))) {
+      const existing = await store.getWeeklySummary(userId, cw);
+      // Generate if missing, or backfill a summary saved before a field was added
+      // (idempotent — keyed by week, replaces in place).
+      if (all.length > 0 && (!existing || existing.contributors === undefined)) {
         const recommendations = await store.getRecommendations(userId);
         const input = collectWeeklySummary({ weekStart: cw, allSessions: all, index, profile, unit: profile.weight_unit, generatedAt: nowISO, recommendations });
         await store.saveWeeklySummary(userId, buildWeeklySummary(input));

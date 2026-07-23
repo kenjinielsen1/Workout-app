@@ -92,6 +92,18 @@ describe('WeeklySummaryView — the summary offers nothing (VOLUME_SUGGESTIONS.m
     }
   });
 
+  it('does not crash tapping a muscle on a summary saved before contributors existed', async () => {
+    const user = userEvent.setup();
+    // Simulate an old persisted summary: the contributors field is absent.
+    const old = buildWeeklySummary(withContrib) as unknown as Record<string, unknown>;
+    delete old.contributors;
+    render(<WeeklySummaryView summary={old as never} lookup={lookup} />);
+    await user.click(screen.getByRole('button', { name: 'Pectorals' }));
+    const dialog = screen.getByRole('dialog', { name: /pectorals lookup/i });
+    expect(dialog).toHaveTextContent(/No hard sets this week/); // empty reduce side, no crash
+    expect(dialog).toHaveTextContent(/Cable Fly/); // add side still works off the live catalog
+  });
+
   it('the copper rule still holds with the lookup mounted (no copper on tap targets)', () => {
     const { container } = render(<WeeklySummaryView summary={withContrib} lookup={lookup} />);
     container.querySelectorAll('.text-copper').forEach((el) => {

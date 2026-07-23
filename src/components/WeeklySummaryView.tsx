@@ -90,7 +90,7 @@ export function WeeklySummaryView({ summary, lookup }: { summary: WeeklySummary;
       {lookup && openMuscle && (
         <VolumeLookupDrawer
           muscle={openMuscle}
-          contributors={summary.contributors[openMuscle] ?? []}
+          contributors={summary.contributors?.[openMuscle] ?? []}
           ctx={lookup}
           onClose={() => setOpenMuscle(null)}
         />
