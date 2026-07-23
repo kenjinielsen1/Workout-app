@@ -327,6 +327,13 @@ export class LocalFirstStore implements WorkoutStore {
     return rows.sort((a, b) => (a.week_start < b.week_start ? 1 : -1)).map((r) => r.summary);
   }
 
+  /** All stored recommendations for a user — the engine's prescription decisions,
+   *  read by the weekly summary to source what increased / held / deloaded. */
+  async getRecommendations(userId: string): Promise<Recommendation[]> {
+    await this.ready;
+    return this.db.getAllFromIndex('recommendations', 'by_user', userId);
+  }
+
   // --- deferred sync --------------------------------------------------------
   /** Drain the queue to `remote` (or the injected one). Idempotent: an op that
    *  already synced upserts by id. Stops on the first failure, leaving the rest

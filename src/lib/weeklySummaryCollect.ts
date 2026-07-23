@@ -3,7 +3,7 @@
 // READS existing functions (weeklyHardSets, personalLandmarks, e1rmSeries,
 // prHistory, patternVolume, acwr, block state); it computes no training logic.
 
-import type { AllSession, Exercise, Profile } from '../data/domain';
+import type { AllSession, Exercise, Profile, Recommendation } from '../data/domain';
 import { isHardSet, weeklyHardSets, weekStartOf } from './volume';
 import { patternVolume } from './balance';
 import { personalLandmarks } from './volumeLandmarks';
@@ -12,7 +12,7 @@ import { acwr } from './features';
 import { blockPosition, isPlannedDeloadWeek, phaseIntent } from './periodization';
 import type { WeightUnit } from './units';
 import type { MovementPattern } from './types';
-import type { SummaryProgression, WeeklySummaryInput } from './weeklySummary';
+import type { ProgressionMove, SummaryProgression, WeeklySummaryInput } from './weeklySummary';
 
 const DAY = 86_400_000;
 const EPS = 2.5; // lb — an e1RM move smaller than this reads as "no change"
@@ -33,6 +33,30 @@ export interface CollectArgs {
   profile: Profile;
   unit: WeightUnit;
   generatedAt: string;
+  /** The engine's prescription decisions, so increased/held/deloaded is sourced
+   *  from what the engine actually decided (not inferred from e1RM). Optional —
+   *  falls back to the e1RM delta when a week's recommendation is missing. */
+  recommendations?: Recommendation[];
+}
+
+/** The engine's decision for an exercise this week vs last, from the prescribed
+ *  target weight: the authoritative source for increased / held / deloaded. Null
+ *  when either week has no recommendation (caller falls back to the e1RM delta). */
+function moveFromRecs(
+  recs: Recommendation[],
+  weekStart: string,
+  lastWeek: string,
+): ProgressionMove | null {
+  const latestIn = (wk: string) =>
+    recs
+      .filter((r) => weekStartOf(r.generated_at) === wk)
+      .sort((a, b) => a.generated_at.localeCompare(b.generated_at))
+      .at(-1) ?? null;
+  const cur = latestIn(weekStart);
+  const prev = latestIn(lastWeek);
+  if (!cur || !prev) return null;
+  const d = cur.target_weight_lb - prev.target_weight_lb;
+  return d > EPS ? 'increased' : d < -EPS ? 'deloaded' : 'held';
 }
 
 export function collectWeeklySummary(args: CollectArgs): WeeklySummaryInput {
@@ -58,6 +82,16 @@ export function collectWeeklySummary(args: CollectArgs): WeeklySummaryInput {
   const earliest = allSessions.reduce<string | null>((m, s) => (m === null || s.performed_at < m ? s.performed_at : m), null);
   const hasFourWeekHistory = earliest !== null && weekMs(weekStart) - weekMs(weekStartOf(earliest)) >= 21 * DAY;
 
+  // Block / periodization state (PROGRAMMING.md Part A) — used both for the deload
+  // framing in progression and the fatigue section.
+  let blockLabel: string | null = null;
+  let plannedDeload = false;
+  if (profile.periodization_enabled && earliest) {
+    const pos = blockPosition(earliest, isoStamp(weekEndT));
+    blockLabel = `${phaseIntent(pos.phase).label} · week ${pos.weekInBlock}`;
+    plannedDeload = isPlannedDeloadWeek(earliest, isoStamp(weekEndT), true);
+  }
+
   // --- 2. progression ------------------------------------------------------
   const trainedIds = [...new Set(weekSessions.map((s) => s.exercise_id))];
   const lastWeek = addWeeks(weekStart, -1);
@@ -73,7 +107,11 @@ export function collectWeeklySummary(args: CollectArgs): WeeklySummaryInput {
     const prev4 = e1rmInWeek(pts, fourAgo);
     const deltaLastWeekLb = cur != null && prev != null ? cur - prev : null;
     const delta4wLb = cur != null && prev4 != null ? cur - prev4 : null;
-    const move = deltaLastWeekLb != null && deltaLastWeekLb > EPS ? 'increased' : deltaLastWeekLb != null && deltaLastWeekLb < -EPS ? 'deloaded' : 'held';
+    // Prefer the engine's actual prescription decision; fall back to the e1RM delta.
+    const e1rmMove: ProgressionMove =
+      deltaLastWeekLb != null && deltaLastWeekLb > EPS ? 'increased' : deltaLastWeekLb != null && deltaLastWeekLb < -EPS ? 'deloaded' : 'held';
+    const exRecs = (args.recommendations ?? []).filter((r) => r.exercise_id === id);
+    const move = moveFromRecs(exRecs, weekStart, lastWeek) ?? e1rmMove;
 
     // weeksFlat: consecutive weeks back from this one whose best e1RM ≈ current.
     let weeksFlat = 0;
@@ -85,7 +123,11 @@ export function collectWeeklySummary(args: CollectArgs): WeeklySummaryInput {
         else break;
       }
     }
-    progression.push({ exercise: ex.name, currentE1RMLb: cur, deltaLastWeekLb, delta4wLb, move, reason: '', weeksFlat });
+    // A factual cause for a back-off (report-only): the engine's coaching rationale
+    // is second-person/forward-looking, so it's NOT surfaced verbatim — only the
+    // fact of a planned vs. autoregulated deload.
+    const reason = move === 'deloaded' ? (plannedDeload ? '' : 'an autoregulated back-off') : '';
+    progression.push({ exercise: ex.name, currentE1RMLb: cur, deltaLastWeekLb, delta4wLb, move, reason, weeksFlat });
   }
   progression.sort((a, b) => a.exercise.localeCompare(b.exercise));
 
@@ -107,23 +149,22 @@ export function collectWeeklySummary(args: CollectArgs): WeeklySummaryInput {
   // --- 4. balance ----------------------------------------------------------
   const pv = patternVolume(allSessions, index, profile, goal, isoStamp(weekEndT));
   const get = (p: MovementPattern) => pv.get(p) ?? 0;
+  // Reuse the balance monitor's exact groupings (PROGRAMMING.md Part B / balance.ts):
+  // push = both pressing planes, pull = both pulling planes; anterior = squat + lunge,
+  // posterior = hinge. Report the ratios only — never the fix.
   const push = get('horizontal_push') + get('vertical_push');
   const pull = get('horizontal_pull') + get('vertical_pull');
-  const balance = push + pull > 0 ? [{ label: 'Push : pull', ratio: ratio(push, pull) }] : [];
+  const anterior = get('squat') + get('lunge');
+  const posterior = get('hinge');
+  const balance: { label: string; ratio: string }[] = [];
+  if (push + pull > 0) balance.push({ label: 'Push : pull', ratio: ratio(push, pull) });
+  if (anterior + posterior > 0) balance.push({ label: 'Anterior : posterior', ratio: ratio(anterior, posterior) });
 
   // --- 5. fatigue ----------------------------------------------------------
   const weekPatternDominant = dominantPattern(pv);
   const acwrVal = weekPatternDominant ? acwr(allSessions, index, profile, weekPatternDominant, weekEndT) : null;
   const rpes = weekSessions.map((s) => s.session_rpe).filter((r): r is number => r != null);
   const avgRpe = rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : null;
-
-  let blockLabel: string | null = null;
-  let plannedDeload = false;
-  if (profile.periodization_enabled && earliest) {
-    const pos = blockPosition(earliest, isoStamp(weekEndT));
-    blockLabel = `${phaseIntent(pos.phase).label} · week ${pos.weekInBlock}`;
-    plannedDeload = isPlannedDeloadWeek(earliest, isoStamp(weekEndT), true);
-  }
 
   // --- 6. PRs --------------------------------------------------------------
   const prs = trainedIds
