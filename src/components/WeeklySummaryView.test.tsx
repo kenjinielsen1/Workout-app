@@ -115,6 +115,17 @@ describe('WeeklySummaryView — the summary offers nothing (VOLUME_SUGGESTIONS.m
     expect(dialog).toHaveTextContent(/Cable Fly/); // add side still works off the live catalog
   });
 
+  it('renders a summary saved before e1rmSpark existed without crashing', () => {
+    // Old persisted progression items lack e1rmSpark (and primaryMuscle).
+    const old = buildWeeklySummary(input) as unknown as { progression: Record<string, unknown>[] };
+    old.progression.forEach((p) => {
+      delete p.e1rmSpark;
+      delete p.primaryMuscle;
+    });
+    render(<WeeklySummaryView summary={old as never} />);
+    expect(screen.getByText('unchanged 4 weeks')).toBeInTheDocument(); // still renders, no sparkline
+  });
+
   it('the copper rule still holds with the lookup mounted (no copper on tap targets)', () => {
     const { container } = render(<WeeklySummaryView summary={withContrib} lookup={lookup} />);
     container.querySelectorAll('.text-copper').forEach((el) => {

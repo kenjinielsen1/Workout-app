@@ -2,8 +2,8 @@
 // no axes or accent — it's a glance, not a chart. Returns null below two points so
 // a lift with one week shows a number alone, not a misleading dot.
 
-export function Sparkline({ points, width = 60, height = 20 }: { points: number[]; width?: number; height?: number }) {
-  if (points.length < 2) return null;
+export function Sparkline({ points, width = 60, height = 20 }: { points?: number[]; width?: number; height?: number }) {
+  if (!points || points.length < 2) return null;
   const pad = 2.5;
   const min = Math.min(...points);
   const max = Math.max(...points);

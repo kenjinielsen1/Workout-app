@@ -224,8 +224,11 @@ export function Home() {
       const cw = completedWeekStart(nowISO);
       const existing = await store.getWeeklySummary(userId, cw);
       // Generate if missing, or backfill a summary saved before a field was added
-      // (idempotent — keyed by week, replaces in place).
-      if (all.length > 0 && (!existing || existing.contributors === undefined)) {
+      // (idempotent — keyed by week, replaces in place). Any new persisted field
+      // added here keeps old summaries from going stale.
+      const stale =
+        !existing || existing.contributors === undefined || existing.progression.some((p) => p.e1rmSpark === undefined);
+      if (all.length > 0 && stale) {
         const recommendations = await store.getRecommendations(userId);
         const input = collectWeeklySummary({ weekStart: cw, allSessions: all, index, profile, unit: profile.weight_unit, generatedAt: nowISO, recommendations });
         await store.saveWeeklySummary(userId, buildWeeklySummary(input));

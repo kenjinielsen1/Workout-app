@@ -72,7 +72,7 @@ export function WeeklySummaryView({ summary, lookup }: { summary: WeeklySummary;
                           <PlainTap label={p.exercise} onTap={open && p.primaryMuscle ? () => open(p.primaryMuscle!) : null} />
                         </span>
                         <div className="flex items-center gap-2">
-                          <Sparkline points={p.e1rmSpark} />
+                          <Sparkline points={p.e1rmSpark ?? []} />
                           <span className="text-base font-semibold tabular-nums text-neutral-100">{current}</span>
                         </div>
                       </div>
