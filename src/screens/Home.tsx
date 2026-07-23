@@ -39,6 +39,10 @@ import { EmptyState } from '../components/EmptyState';
 import { SyncNotice } from '../components/SyncNotice';
 import { FirstTimeHint } from '../components/FirstTimeHint';
 import { useSyncStatus } from '../hooks/useSyncStatus';
+import { WeeklySummaryScreen } from '../components/WeeklySummaryScreen';
+import { buildWeeklySummary, type WeeklySummary } from '../lib/weeklySummary';
+import { collectWeeklySummary } from '../lib/weeklySummaryCollect';
+import { completedWeekStart, lastSeenWeek, markWeekSeen, shouldAutoShow } from '../lib/weeklySummaryTiming';
 import { WorkoutLog, type WorkoutLogEntry } from '../components/WorkoutLog';
 import { ReadinessCheckIn, type CheckinAnswers } from '../components/ReadinessCheckIn';
 import { PlateauCard } from '../components/PlateauCard';
@@ -64,6 +68,11 @@ export function Home() {
   const [selectedId, setSelectedId] = useState<string>('');
   const [loaded, setLoaded] = useState(false); // tell "still loading" from "loaded, empty"
   const syncStatus = useSyncStatus(store, userId);
+  // Weekly summary (WEEKLY_SUMMARY.md): generated for the just-completed week,
+  // shown once as an interstitial, then browsable from history.
+  const [summaries, setSummaries] = useState<WeeklySummary[]>([]);
+  const [summaryIdx, setSummaryIdx] = useState(0);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allSessions, setAllSessions] = useState<AllSession[]>([]);
   const [target, setTarget] = useState<SessionTarget | null>(null);
@@ -200,6 +209,35 @@ export function Home() {
       active = false;
     };
   }, [store, userId]);
+
+  // WEEKLY_SUMMARY.md: once data has loaded, generate the just-completed week's
+  // summary if it doesn't exist yet (idempotent — keyed by week, never duplicated),
+  // load history, and auto-show the interstitial for a summary the user hasn't seen.
+  const summaryGenRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || !profile || summaryGenRef.current || index.size === 0) return;
+    summaryGenRef.current = true;
+    void (async () => {
+      const all = await store.getAllSessions(userId);
+      const nowISO = new Date().toISOString();
+      const cw = completedWeekStart(nowISO);
+      if (all.length > 0 && !(await store.getWeeklySummary(userId, cw))) {
+        const input = collectWeeklySummary({ weekStart: cw, allSessions: all, index, profile, unit: profile.weight_unit, generatedAt: nowISO });
+        await store.saveWeeklySummary(userId, buildWeeklySummary(input));
+      }
+      const list = await store.listWeeklySummaries(userId);
+      setSummaries(list);
+      if (shouldAutoShow(list[0]?.weekStart ?? null, lastSeenWeek(userId))) {
+        setSummaryIdx(0);
+        setSummaryOpen(true);
+      }
+    })();
+  }, [loaded, profile, index, store, userId]);
+
+  const closeSummary = useCallback(() => {
+    if (summaries[0]) markWeekSeen(userId, summaries[0].weekStart); // newest → don't re-pop
+    setSummaryOpen(false);
+  }, [summaries, userId]);
 
   const pickerExercises = useMemo<PickerExercise[]>(
     () =>
@@ -456,6 +494,19 @@ export function Home() {
       if (next) await store.saveNextSession(userId, selectedId, next, profile.goal);
     }
     if (profile) await computeTarget(selectedId, profile);
+
+    // WEEKLY_SUMMARY.md Sunday-evening edge: if this session lands in a week that
+    // already has a summary, regenerate it (idempotent) so the readout isn't stale.
+    if (profile) {
+      const fw = weekStartOf(new Date().toISOString());
+      if (await store.getWeeklySummary(userId, fw)) {
+        const all = await store.getAllSessions(userId);
+        const input = collectWeeklySummary({ weekStart: fw, allSessions: all, index, profile, unit: profile.weight_unit, generatedAt: new Date().toISOString() });
+        await store.saveWeeklySummary(userId, buildWeeklySummary(input));
+        setSummaries(await store.listWeeklySummaries(userId));
+      }
+    }
+
     void store.flush(); // push the session's sets/recommendation/outcome now
     stopTimer(); // end the workout clock
     setPairIds(null); // pairing is per-session view-state; it ends with the session
@@ -773,6 +824,15 @@ export function Home() {
                 {blockPhase.phase === 'deload' ? 'Deload wk' : blockPhase.phase === 'intensification' ? 'Intensify' : 'Build'} · wk {blockPhase.weekInBlock}
               </span>
             )}
+            {summaries.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { setSummaryIdx(0); setSummaryOpen(true); }}
+                className="font-semibold hover:underline"
+              >
+                Week
+              </button>
+            )}
             <button type="button" onClick={() => setSettingsOpen(true)} className="font-semibold hover:underline">
               ⚙ Settings
             </button>
@@ -967,6 +1027,10 @@ export function Home() {
 
       {settingsOpen && (
         <Settings profile={profile} onSave={handleSaveSettings} onClose={() => setSettingsOpen(false)} />
+      )}
+
+      {summaryOpen && (
+        <WeeklySummaryScreen summaries={summaries} index={summaryIdx} onIndex={setSummaryIdx} onClose={closeSummary} />
       )}
 
       {!onboardingSeen && <SafetyOnboarding onAcknowledge={acknowledgeOnboarding} />}

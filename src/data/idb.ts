@@ -4,6 +4,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Exercise, ExerciseOverride, LoggedSet, Profile, Recommendation, Workout } from './domain';
 import type { SessionTarget } from '../lib/target';
+import type { WeeklySummary } from '../lib/weeklySummary';
 
 /** A queued mutation awaiting idempotent replay to the remote (Supabase). */
 export type SyncOp =
@@ -33,6 +34,16 @@ export interface AliasRow {
   aliases: string[];
 }
 
+/** A generated weekly summary (WEEKLY_SUMMARY.md). Device-local view — derived
+ *  from synced sessions, so it's regenerable and doesn't itself sync. One row per
+ *  user per week; re-generating replaces it (idempotent). */
+export interface WeeklySummaryRow {
+  key: string; // `${user_id}::${week_start}`
+  user_id: string;
+  week_start: string; // Monday yyyy-mm-dd — sorts chronologically as a string
+  summary: WeeklySummary;
+}
+
 export interface PODB extends DBSchema {
   exercises: { key: string; value: Exercise };
   aliases: { key: string; value: AliasRow };
@@ -43,12 +54,13 @@ export interface PODB extends DBSchema {
   next_sessions: { key: string; value: NextSessionRow };
   overrides: { key: string; value: OverrideRow; indexes: { by_user: string } };
   sync_queue: { key: number; value: SyncOp };
+  weekly_summaries: { key: string; value: WeeklySummaryRow; indexes: { by_user: string } };
 }
 
 export type PODatabase = IDBPDatabase<PODB>;
 
 export function openPODB(name = 'progressive-overload'): Promise<PODatabase> {
-  return openDB<PODB>(name, 2, {
+  return openDB<PODB>(name, 3, {
     upgrade(db, oldVersion) {
       if (oldVersion < 1) {
         db.createObjectStore('exercises', { keyPath: 'id' });
@@ -73,6 +85,11 @@ export function openPODB(name = 'progressive-overload'): Promise<PODatabase> {
         // INCREMENTS.md — per-user machine overrides.
         const overrides = db.createObjectStore('overrides', { keyPath: 'key' });
         overrides.createIndex('by_user', 'user_id');
+      }
+      if (oldVersion < 3) {
+        // WEEKLY_SUMMARY.md — device-local generated readouts, browsable history.
+        const ws = db.createObjectStore('weekly_summaries', { keyPath: 'key' });
+        ws.createIndex('by_user', 'user_id');
       }
     },
   });

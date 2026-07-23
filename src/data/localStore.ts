@@ -8,6 +8,7 @@
 
 import type { SearchableExercise } from '../lib/exerciseSearch';
 import type { SessionTarget } from '../lib/target';
+import type { WeeklySummary } from '../lib/weeklySummary';
 import { openPODB, type PODatabase, type SyncOp } from './idb';
 import { groupAllSessions, groupSetsIntoSessions } from './mappers';
 import { PROFILE_DEFAULTS } from './dbTypes';
@@ -299,6 +300,31 @@ export class LocalFirstStore implements WorkoutStore {
   async getNextSession(userId: string, exerciseId: string, goal: Goal): Promise<SessionTarget | null> {
     await this.ready;
     return (await this.db.get('next_sessions', `${userId}::${exerciseId}::${goal}`))?.target ?? null;
+  }
+
+  // --- weekly summaries (WEEKLY_SUMMARY.md) — device-local, browsable history ---
+  // Keyed by user+week, so regenerating a week replaces it (idempotent), never
+  // duplicates. Not synced — it's a view derived from synced sessions.
+  async saveWeeklySummary(userId: string, summary: WeeklySummary): Promise<void> {
+    await this.ready;
+    await this.db.put('weekly_summaries', {
+      key: `${userId}::${summary.weekStart}`,
+      user_id: userId,
+      week_start: summary.weekStart,
+      summary,
+    });
+  }
+
+  async getWeeklySummary(userId: string, weekStart: string): Promise<WeeklySummary | null> {
+    await this.ready;
+    return (await this.db.get('weekly_summaries', `${userId}::${weekStart}`))?.summary ?? null;
+  }
+
+  /** Newest week first. */
+  async listWeeklySummaries(userId: string): Promise<WeeklySummary[]> {
+    await this.ready;
+    const rows = await this.db.getAllFromIndex('weekly_summaries', 'by_user', userId);
+    return rows.sort((a, b) => (a.week_start < b.week_start ? 1 : -1)).map((r) => r.summary);
   }
 
   // --- deferred sync --------------------------------------------------------
