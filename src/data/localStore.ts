@@ -173,6 +173,31 @@ export class LocalFirstStore implements WorkoutStore {
     return exercise;
   }
 
+  /** Edit a user-owned exercise (fix its muscle, equipment, or name). System
+   *  catalog entries are shared and never editable. Keeps id/slug/history intact,
+   *  so past sets re-attribute to the corrected muscle. */
+  async updateExercise(userId: string, exerciseId: string, input: CreateExerciseInput): Promise<Exercise> {
+    await this.ready;
+    const existing = await this.db.get('exercises', exerciseId);
+    if (!existing) throw new Error('Exercise not found.');
+    if (existing.is_system || existing.owner_id !== userId) throw new Error('Only your own exercises can be edited.');
+    const updated: Exercise = {
+      ...existing,
+      name: input.name.trim(),
+      movement_pattern: input.movement_pattern,
+      equipment: input.equipment,
+      load_type: input.load_type,
+      is_compound: input.is_compound,
+      is_unilateral: input.is_unilateral,
+      default_increment_lb: input.default_increment_lb,
+      fatigue_cost: input.fatigue_cost,
+      primary_muscles: input.primary_muscles,
+    };
+    await this.db.put('exercises', updated);
+    await this.enqueue({ kind: 'exercise', payload: updated });
+    return updated;
+  }
+
   private async userWorkouts(userId: string): Promise<Map<string, Workout>> {
     const rows = await this.db.getAllFromIndex('workouts', 'by_user', userId);
     return new Map(rows.map((w) => [w.id, w]));

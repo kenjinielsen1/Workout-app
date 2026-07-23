@@ -9,16 +9,19 @@ const exercises: PickerExercise[] = [
   { id: 'squat', name: 'Barbell Back Squat', primary_muscles: ['quadriceps', 'glutes'], aliases: ['squat', 'bb squat'] },
   { id: 'row', name: 'Barbell Row', primary_muscles: ['upper_back'], aliases: ['bent over row'] },
   { id: 'curl', name: 'Dumbbell Curl', primary_muscles: ['biceps'], aliases: ['db curl'] },
+  // A user-owned exercise created earlier with the wrong muscle — now editable.
+  { id: 'my-curl', name: 'Machine Leg Curl', primary_muscles: ['quadriceps'], aliases: [], editable: true, equipment: 'machine_selectorized' },
 ];
 
 function setup() {
   const onSelect = vi.fn();
   const onClose = vi.fn();
   const onCreate = vi.fn();
+  const onEdit = vi.fn();
   render(
-    <ExercisePicker exercises={exercises} selectedId="squat" onSelect={onSelect} onCreate={onCreate} onClose={onClose} />,
+    <ExercisePicker exercises={exercises} selectedId="squat" onSelect={onSelect} onCreate={onCreate} onEdit={onEdit} onClose={onClose} />,
   );
-  return { onSelect, onClose, onCreate, user: userEvent.setup() };
+  return { onSelect, onClose, onCreate, onEdit, user: userEvent.setup() };
 }
 
 describe('ExercisePicker', () => {
@@ -74,6 +77,22 @@ describe('ExercisePicker', () => {
         primary_muscles: ['rear_delts'], // the exact muscle chosen — not a coarse group
       }),
     );
+  });
+
+  it('edits a user-owned exercise to fix its muscle (no Edit on system lifts)', async () => {
+    const { user, onEdit } = setup();
+    // System catalog entries are not editable.
+    expect(screen.queryByRole('button', { name: /edit barbell bench press/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /edit machine leg curl/i }));
+    // Form opens prefilled in edit mode.
+    expect(screen.getByRole('heading', { name: /edit exercise/i })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /exercise name/i })).toHaveValue('Machine Leg Curl');
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /primary muscle/i }), 'hamstrings');
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(onEdit).toHaveBeenCalledWith('my-curl', expect.objectContaining({ name: 'Machine Leg Curl', primary_muscles: ['hamstrings'] }));
   });
 
   it('warns "did you mean…?" on a near-duplicate name and can use the existing one', async () => {

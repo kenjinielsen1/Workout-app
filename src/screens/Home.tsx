@@ -254,6 +254,8 @@ export function Home() {
         name: e.name,
         primary_muscles: e.primary_muscles,
         aliases: aliasById.get(e.id) ?? [],
+        editable: !e.is_system, // only the user's own lifts are editable
+        equipment: e.equipment,
       })),
     [exercises, aliasById],
   );
@@ -438,6 +440,15 @@ export function Home() {
       setExercises((prev) => [...prev, ex]);
       setAliasById((prev) => new Map(prev).set(ex.id, []));
       setSelectedId(ex.id); // switch to it so you can log against it now
+      void store.flush();
+    },
+    [store, userId],
+  );
+
+  const handleUpdateExercise = useCallback(
+    async (id: string, input: CreateExerciseInput) => {
+      const updated = await store.updateExercise(userId, id, input);
+      setExercises((prev) => prev.map((e) => (e.id === id ? updated : e)));
       void store.flush();
     },
     [store, userId],
@@ -802,6 +813,7 @@ export function Home() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             onCreate={handleCreateExercise}
+          onEdit={handleUpdateExercise}
             onClose={() => setPickerOpen(false)}
           />
         )}
@@ -1053,6 +1065,7 @@ export function Home() {
             }
           }}
           onCreate={handleCreateExercise}
+          onEdit={handleUpdateExercise}
           onClose={() => {
             setPickerOpen(false);
             setPickerMode('switch');

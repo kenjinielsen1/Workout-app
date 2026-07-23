@@ -17,6 +17,9 @@ export interface PickerExercise {
   name: string;
   primary_muscles: string[];
   aliases: string[];
+  /** User-owned exercises can be edited (fix muscle/equipment/name). */
+  editable?: boolean;
+  equipment?: Equipment;
 }
 
 interface ExercisePickerProps {
@@ -24,19 +27,31 @@ interface ExercisePickerProps {
   selectedId: string;
   onSelect: (id: string) => void;
   onCreate: (input: CreateExerciseInput) => void;
+  /** Save edits to a user-owned exercise. */
+  onEdit?: (id: string, input: CreateExerciseInput) => void;
   onClose: () => void;
 }
 
-export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onClose }: ExercisePickerProps) {
+export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onEdit, onClose }: ExercisePickerProps) {
   const [query, setQuery] = useState('');
   const [activeGroup, setActiveGroup] = useState<'All' | MuscleGroup>('All');
   const [mode, setMode] = useState<'browse' | 'create'>('browse');
 
-  // create form state
+  // create/edit form state — editingId set = editing an existing exercise.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [equipment, setEquipment] = useState<Equipment>('barbell');
   const [primaryMuscle, setPrimaryMuscle] = useState<string>('pectorals');
   const [dup, setDup] = useState<Match<PickerExercise> | null>(null);
+
+  const startEdit = (ex: PickerExercise) => {
+    setEditingId(ex.id);
+    setName(ex.name);
+    setEquipment(ex.equipment ?? 'barbell');
+    setPrimaryMuscle(ex.primary_muscles[0] ?? 'pectorals');
+    setDup(null);
+    setMode('create');
+  };
 
   const grouped = useMemo(() => groupExercisesByMuscle(exercises), [exercises]);
   const groupsPresent = useMemo(() => grouped.map((g) => g.group), [grouped]);
@@ -57,7 +72,10 @@ export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onCl
   };
 
   const openCreate = (prefill = '') => {
+    setEditingId(null);
     setName(prefill);
+    setEquipment('barbell');
+    setPrimaryMuscle('pectorals');
     setDup(null);
     setMode('create');
   };
@@ -65,26 +83,42 @@ export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onCl
   const submitCreate = (force = false) => {
     const trimmed = name.trim();
     if (!trimmed) return;
+    const input = buildNewExercise({ name: trimmed, equipment, primaryMuscle });
+    if (editingId) {
+      onEdit?.(editingId, input); // editing an existing lift — no duplicate check
+      onClose();
+      return;
+    }
     const match = findDuplicate(trimmed, exercises);
     if (match && !force) {
       setDup(match); // "Did you mean …?"
       return;
     }
-    onCreate(buildNewExercise({ name: trimmed, equipment, primaryMuscle }));
+    onCreate(input);
     onClose();
   };
 
   const Row = ({ ex }: { ex: PickerExercise }) => (
-    <button
-      type="button"
-      onClick={() => choose(ex.id)}
-      className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left ${
+    <div
+      className={`flex w-full items-center gap-1 pr-2 ${
         ex.id === selectedId ? 'bg-emerald-50 dark:bg-emerald-950/40' : 'active:bg-neutral-100 dark:active:bg-neutral-800'
       }`}
     >
-      <span className="font-medium">{ex.name}</span>
-      <span className="shrink-0 text-xs text-neutral-400">{groupForExercise(ex)}</span>
-    </button>
+      <button type="button" onClick={() => choose(ex.id)} className="flex flex-1 items-center justify-between gap-3 px-4 py-3 text-left">
+        <span className="font-medium">{ex.name}</span>
+        <span className="shrink-0 text-xs text-neutral-400">{groupForExercise(ex)}</span>
+      </button>
+      {ex.editable && onEdit && (
+        <button
+          type="button"
+          onClick={() => startEdit(ex)}
+          aria-label={`Edit ${ex.name}`}
+          className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-neutral-400 active:scale-95"
+        >
+          Edit
+        </button>
+      )}
+    </div>
   );
 
   return (
@@ -102,10 +136,10 @@ export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onCl
         {mode === 'create' ? (
           <div className="flex flex-col gap-4 p-4">
             <div className="flex items-center justify-between">
-              <button type="button" onClick={() => setMode('browse')} className="text-sm font-semibold text-neutral-500">
+              <button type="button" onClick={() => { setEditingId(null); setMode('browse'); }} className="text-sm font-semibold text-neutral-500">
                 ‹ Back
               </button>
-              <h2 className="text-base font-bold">New exercise</h2>
+              <h2 className="text-base font-bold">{editingId ? 'Edit exercise' : 'New exercise'}</h2>
               <span className="w-10" />
             </div>
 
@@ -184,7 +218,7 @@ export function ExercisePicker({ exercises, selectedId, onSelect, onCreate, onCl
               disabled={!name.trim()}
               className="mt-2 rounded-2xl bg-neutral-100 py-3 text-base font-bold text-neutral-900 active:scale-[0.99] disabled:opacity-50"
             >
-              Add exercise
+              {editingId ? 'Save changes' : 'Add exercise'}
             </button>
           </div>
         ) : (
