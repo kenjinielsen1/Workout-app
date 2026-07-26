@@ -4,7 +4,7 @@ import type { RemoteSync } from './remoteSync';
 import { CONFIG_VERSION } from '../lib/evidenceConfig';
 import type { RemoteSource } from './remoteSource';
 import { seedExercises } from './seedCatalog';
-import type { ExerciseOverride, LoggedSet, OutcomeJson, Profile, Recommendation, Workout } from './domain';
+import type { ExerciseOverride, LoggedSet, OutcomeJson, Profile, Recommendation, Workout, WorkoutTemplate } from './domain';
 
 const dbName = () => `test-${crypto.randomUUID()}`;
 const U = 'user-1';
@@ -25,6 +25,9 @@ class MockRemote implements RemoteSync {
   overrides = new Map<string, ExerciseOverride>();
   async pushOverride(o: ExerciseOverride) { this.guard(); this.overrides.set(`${o.user_id}::${o.exercise_id}`, o); }
   async deleteSet() { this.guard(); }
+  templates = new Map<string, WorkoutTemplate>();
+  async pushTemplate(t: WorkoutTemplate) { this.guard(); this.templates.set(t.id, t); }
+  async deleteTemplate(id: string) { this.guard(); this.templates.delete(id); }
   private guard() { if (this.fail) throw new Error('offline'); this.calls++; }
 }
 
@@ -293,5 +296,54 @@ describe('feedback loop persistence', () => {
     const rows = await store.exportOutcomes(U);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ rule_pred_e1rm: 226, ml_pred_e1rm: 240, actual_e1rm: 233 });
+  });
+});
+
+describe('saved workouts — templates (SAVED_WORKOUTS.md)', () => {
+  it('is fully usable offline: create, edit, reorder, delete with no remote', async () => {
+    const store = new LocalFirstStore({ dbName: dbName() }); // no remote at all
+    const t = await store.saveTemplate(U, { name: 'Push A', exercise_ids: ['bench', 'ohp', 'dip'] });
+    expect(t.exercise_ids).toEqual(['bench', 'ohp', 'dip']);
+    expect(await store.listTemplates(U)).toHaveLength(1);
+
+    // Edit in place (rename + reorder) keeps the same id and created_at.
+    const edited = await store.saveTemplate(U, { id: t.id, name: 'Push A2', exercise_ids: ['dip', 'bench', 'ohp'] });
+    expect(edited.id).toBe(t.id);
+    expect(edited.created_at).toBe(t.created_at);
+    expect(edited.exercise_ids).toEqual(['dip', 'bench', 'ohp']);
+    expect(await store.listTemplates(U)).toHaveLength(1); // replaced, not duplicated
+
+    await store.deleteTemplate(t.id);
+    expect(await store.listTemplates(U)).toEqual([]);
+  });
+
+  // The architectural rule: exercises + order, never weights/reps/sets.
+  it('persists ONLY exercise ids and order — no weight, rep, or set data', async () => {
+    const store = new LocalFirstStore({ dbName: dbName() });
+    const t = await store.saveTemplate(U, { name: 'Legs', exercise_ids: ['squat', 'rdl'] });
+    expect(Object.keys(t).sort()).toEqual(['created_at', 'exercise_ids', 'id', 'name', 'updated_at', 'user_id']);
+    const serialized = JSON.stringify(t);
+    for (const banned of ['weight', 'reps', 'sets', 'rir', 'target']) {
+      expect(serialized.toLowerCase().includes(banned), `template leaked "${banned}"`).toBe(false);
+    }
+  });
+
+  it('templates created offline sync idempotently on reconnect', async () => {
+    const remote = new MockRemote();
+    remote.fail = true; // offline
+    const store = new LocalFirstStore({ dbName: dbName(), remote });
+    const t = await store.saveTemplate(U, { name: 'Pull A', exercise_ids: ['row', 'curl'] });
+    expect(await store.flush()).toBe(0); // nothing drains while offline
+    expect(remote.templates.size).toBe(0);
+    expect(await store.listTemplates(U)).toHaveLength(1); // still fully usable locally
+
+    remote.fail = false; // reconnect
+    expect(await store.flush()).toBeGreaterThan(0);
+    expect(remote.templates.get(t.id)?.exercise_ids).toEqual(['row', 'curl']);
+
+    // Replaying an already-drained queue changes nothing.
+    const size = remote.templates.size;
+    await store.flush();
+    expect(remote.templates.size).toBe(size);
   });
 });

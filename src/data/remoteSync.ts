@@ -3,7 +3,7 @@
 // already synced simply overwrites itself (last-write-wins, single user/device).
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Exercise, ExerciseOverride, OutcomeJson, Profile, Recommendation, Workout, LoggedSet } from './domain';
+import type { Exercise, ExerciseOverride, OutcomeJson, Profile, Recommendation, Workout, LoggedSet, WorkoutTemplate } from './domain';
 
 export interface RemoteSync {
   pushWorkout(w: Workout): Promise<void>;
@@ -14,6 +14,8 @@ export interface RemoteSync {
   pushExercise(e: Exercise): Promise<void>;
   pushOverride(o: ExerciseOverride): Promise<void>;
   deleteSet(id: string): Promise<void>;
+  pushTemplate(t: WorkoutTemplate): Promise<void>;
+  deleteTemplate(id: string): Promise<void>;
 }
 
 /**
@@ -91,5 +93,28 @@ export class SupabaseRemoteSync implements RemoteSync {
       fatigue_cost: e.fatigue_cost, is_system: e.is_system, owner_id: e.owner_id,
       variant_of: e.variant_of,
     });
+  }
+
+  /** A template is its header plus an ordered exercise list. The rows are replaced
+   *  wholesale (delete-then-insert) so a reorder or removal can't leave stale
+   *  positions behind; replaying the op is therefore still idempotent.
+   *  NOTE: no weight/rep/set column exists on either table — by design. */
+  async pushTemplate(t: WorkoutTemplate): Promise<void> {
+    await this.upsert('workout_templates', {
+      id: t.id, user_id: t.user_id, name: t.name,
+      created_at: t.created_at, updated_at: t.updated_at,
+    });
+    const del = await this.db.from('workout_template_exercises').delete().eq('template_id', t.id);
+    if (del.error) throw del.error;
+    if (t.exercise_ids.length === 0) return;
+    const rows = t.exercise_ids.map((exercise_id, position) => ({ template_id: t.id, exercise_id, position }));
+    const { error } = await this.db.from('workout_template_exercises').insert(rows);
+    if (error) throw error;
+  }
+
+  async deleteTemplate(id: string): Promise<void> {
+    // template_exercises cascade on delete.
+    const { error } = await this.db.from('workout_templates').delete().eq('id', id);
+    if (error) throw error;
   }
 }

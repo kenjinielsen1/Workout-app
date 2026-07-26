@@ -30,6 +30,20 @@ export interface Exercise {
 
 /** Per-user, per-exercise override of a machine's increment/min — the same
  *  machine differs between gyms (INCREMENTS.md). */
+/**
+ * A saved workout (SAVED_WORKOUTS.md): WHICH exercises, in WHAT order. Nothing
+ * else. There is deliberately no weight/rep/set field — those come from the engine,
+ * computed fresh each session. `exercise_ids` order IS the template's `position`.
+ */
+export interface WorkoutTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  exercise_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ExerciseOverride {
   user_id: string;
   exercise_id: string;

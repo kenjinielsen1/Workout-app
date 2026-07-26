@@ -15,7 +15,7 @@ import { PROFILE_DEFAULTS } from './dbTypes';
 import { CONFIG_VERSION } from '../lib/evidenceConfig';
 import { demoHistory, seedExercises } from './seedCatalog';
 import type {
-  AllSession, CreateExerciseInput, Exercise, ExerciseOverride, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, PlateauChoice, Workout, WorkoutCheckin,
+  AllSession, CreateExerciseInput, Exercise, ExerciseOverride, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, PlateauChoice, Workout, WorkoutCheckin, WorkoutTemplate,
 } from './domain';
 import { slugify } from '../lib/newExercise';
 import type { LogSetInput, SaveRecommendationInput, WorkoutStore } from './store';
@@ -359,6 +359,39 @@ export class LocalFirstStore implements WorkoutStore {
     return this.db.getAllFromIndex('recommendations', 'by_user', userId);
   }
 
+  // --- saved workouts (SAVED_WORKOUTS.md) -----------------------------------
+  // Exercise ids + order ONLY. Never weights, reps, or sets — those come from the
+  // engine each session. Local-first: fully usable offline, synced idempotently.
+
+  async listTemplates(userId: string): Promise<WorkoutTemplate[]> {
+    await this.ready;
+    const rows = await this.db.getAllFromIndex('workout_templates', 'by_user', userId);
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async saveTemplate(userId: string, input: { id?: string; name: string; exercise_ids: string[] }): Promise<WorkoutTemplate> {
+    await this.ready;
+    const now = new Date().toISOString();
+    const existing = input.id ? await this.db.get('workout_templates', input.id) : undefined;
+    const template: WorkoutTemplate = {
+      id: input.id ?? uuid(),
+      user_id: userId,
+      name: input.name.trim(),
+      exercise_ids: [...input.exercise_ids], // position IS the array order
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    };
+    await this.db.put('workout_templates', template);
+    await this.enqueue({ kind: 'template', payload: template });
+    return template;
+  }
+
+  async deleteTemplate(id: string): Promise<void> {
+    await this.ready;
+    await this.db.delete('workout_templates', id);
+    await this.enqueue({ kind: 'delete-template', payload: { id } });
+  }
+
   // --- deferred sync --------------------------------------------------------
   /** Drain the queue to `remote` (or the injected one). Idempotent: an op that
    *  already synced upserts by id. Stops on the first failure, leaving the rest
@@ -383,6 +416,8 @@ export class LocalFirstStore implements WorkoutStore {
             case 'exercise': await remote.pushExercise(op.payload); break;
             case 'override': await remote.pushOverride(op.payload); break;
             case 'delete-set': await remote.deleteSet(op.payload.id); break;
+            case 'template': await remote.pushTemplate(op.payload); break;
+            case 'delete-template': await remote.deleteTemplate(op.payload.id); break;
           }
           if (op.seq !== undefined) await this.db.delete('sync_queue', op.seq);
           flushed++;

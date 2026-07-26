@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { useStore } from '../data/StoreProvider';
-import type { AllSession, CreateExerciseInput, Exercise, ExerciseOverride, Profile } from '../data/domain';
+import type { AllSession, CreateExerciseInput, Exercise, ExerciseOverride, Profile, WorkoutTemplate } from '../data/domain';
 import { deriveInitialTarget, seedTargetFromRepMax, type SessionTarget } from '../lib/target';
 import { exerciseFeatures, recommendTarget, sessionsForExercise } from '../lib/recommend';
 import { isMLConfigured, predict } from '../lib/mlClient';
@@ -40,6 +40,9 @@ import { SyncNotice } from '../components/SyncNotice';
 import { FirstTimeHint } from '../components/FirstTimeHint';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 import { WeeklySummaryScreen } from '../components/WeeklySummaryScreen';
+import { TemplateManager } from '../components/TemplateManager';
+import { TemplateUpdatePrompt } from '../components/TemplateUpdatePrompt';
+import { lineupFromSession, structuralDiff, type TemplateDiff } from '../lib/workoutTemplates';
 import type { VolumeLookupContext } from '../components/VolumeLookupDrawer';
 import { buildWeeklySummary, type WeeklySummary } from '../lib/weeklySummary';
 import { collectWeeklySummary } from '../lib/weeklySummaryCollect';
@@ -74,6 +77,14 @@ export function Home() {
   const [summaries, setSummaries] = useState<WeeklySummary[]>([]);
   const [summaryIdx, setSummaryIdx] = useState(0);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  // Saved workouts (SAVED_WORKOUTS.md). The active template is session-scoped: it
+  // chose the lineup and has NO influence on any target.
+  const [templates, setTemplates] = useState<WorkoutTemplate[]>([]);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [activeTemplate, setActiveTemplate] = useState<WorkoutTemplate | null>(null);
+  const [templatePrompt, setTemplatePrompt] = useState<{ template: WorkoutTemplate; diff: TemplateDiff; lineup: string[] } | null>(null);
+  // Exercise ids in the order they were actually trained this session.
+  const sessionOrder = useRef<string[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allSessions, setAllSessions] = useState<AllSession[]>([]);
   const [target, setTarget] = useState<SessionTarget | null>(null);
@@ -206,6 +217,7 @@ export function Home() {
       setSelectedId((cur) => cur || ex[0]?.id || '');
       setLoaded(true);
     });
+    void store.listTemplates(userId).then((t) => active && setTemplates(t));
     return () => {
       active = false;
     };
@@ -372,6 +384,9 @@ export function Home() {
         workoutId.current = w.id;
       }
       setCounter.current += 1;
+      // Record the lineup actually trained, in order (SAVED_WORKOUTS.md) — used at
+      // session end for the structural diff against the template. Ids only.
+      if (!logged.is_warmup && !sessionOrder.current.includes(selectedId)) sessionOrder.current.push(selectedId);
       await store.logSet({
         id: logged.id,
         workout_id: workoutId.current,
@@ -443,6 +458,42 @@ export function Home() {
       void store.flush();
     },
     [store, userId],
+  );
+
+  // --- saved workouts (SAVED_WORKOUTS.md) ----------------------------------
+  const saveTemplate = useCallback(
+    async (input: { id?: string; name: string; exercise_ids: string[] }) => {
+      await store.saveTemplate(userId, input);
+      setTemplates(await store.listTemplates(userId));
+      void store.flush();
+    },
+    [store, userId],
+  );
+
+  const deleteTemplate = useCallback(
+    async (id: string) => {
+      await store.deleteTemplate(id);
+      setTemplates(await store.listTemplates(userId));
+      if (activeTemplate?.id === id) setActiveTemplate(null);
+      void store.flush();
+    },
+    [store, userId, activeTemplate],
+  );
+
+  /** Start a session from a template: it selects the LINEUP only. Every target still
+   *  comes from the engine, exactly as in the manual flow. */
+  const startFromTemplate = useCallback(
+    (t: WorkoutTemplate) => {
+      setActiveTemplate(t);
+      setTemplatesOpen(false);
+      sessionOrder.current = [];
+      const first = t.exercise_ids.find((id) => index.has(id)); // skip deleted refs
+      if (first) {
+        setSelectedId(first);
+        setTab('log');
+      }
+    },
+    [index],
   );
 
   const handleUpdateExercise = useCallback(
@@ -530,8 +581,19 @@ export function Home() {
     void store.flush(); // push the session's sets/recommendation/outcome now
     stopTimer(); // end the workout clock
     setPairIds(null); // pairing is per-session view-state; it ends with the session
+
+    // SAVED_WORKOUTS.md: at session END only, ask once if the LINEUP differed
+    // structurally (added / skipped / reordered). Never mid-workout, never on set
+    // counts, weights, reps, or a failed set — structuralDiff only sees ids.
+    if (activeTemplate) {
+      const trained = lineupFromSession(sessionOrder.current);
+      const diff = structuralDiff(activeTemplate.exercise_ids, trained);
+      if (diff.changed && trained.length > 0) setTemplatePrompt({ template: activeTemplate, diff, lineup: trained });
+      setActiveTemplate(null); // the template's job ends with the session
+    }
+    sessionOrder.current = [];
     setTab('detail');
-  }, [store, userId, resolvedExercises, index, selectedId, profile, target, computeTarget, stopTimer]);
+  }, [store, userId, resolvedExercises, index, selectedId, profile, target, computeTarget, stopTimer, activeTemplate]);
 
   const selected = resolvedExercises.find((e) => e.id === selectedId);
   const detailSessions = allSessions.filter((s) => s.exercise_id === selectedId);
@@ -871,6 +933,9 @@ export function Home() {
                 {blockPhase.phase === 'deload' ? 'Deload wk' : blockPhase.phase === 'intensification' ? 'Intensify' : 'Build'} · wk {blockPhase.weekInBlock}
               </span>
             )}
+            <button type="button" onClick={() => setTemplatesOpen(true)} className="font-semibold hover:underline">
+              Workouts
+            </button>
             {summaries.length > 0 && (
               <button
                 type="button"
@@ -921,6 +986,37 @@ export function Home() {
           {syncStatus.stale && (
             <div className="px-4">
               <SyncNotice since={syncStatus.since} />
+            </div>
+          )}
+          {/* The template's lineup — a quiet nav strip. Tapping switches the active
+              lift; deviating is unrestricted and never prompts mid-session. */}
+          {activeTemplate && (
+            <div className="flex flex-col gap-1 px-4">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">{activeTemplate.name}</span>
+                <button type="button" onClick={() => setActiveTemplate(null)} className="text-xs text-neutral-500">Leave</button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {activeTemplate.exercise_ids.map((id) => {
+                  const ex = index.get(id);
+                  const done = sessionOrder.current.includes(id);
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      disabled={!ex}
+                      onClick={() => ex && setSelectedId(id)}
+                      className={`rounded-xl border px-2.5 py-1 text-xs font-medium ${
+                        id === selectedId
+                          ? 'border-neutral-400 bg-neutral-800 text-neutral-100'
+                          : 'border-neutral-700 text-neutral-400'
+                      } ${done ? 'line-through opacity-60' : ''} ${!ex ? 'opacity-40' : ''}`}
+                    >
+                      {ex?.name ?? 'Unavailable'}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
           {painReferralResult.refer && (
@@ -1079,6 +1175,30 @@ export function Home() {
 
       {summaryOpen && (
         <WeeklySummaryScreen summaries={summaries} index={summaryIdx} onIndex={setSummaryIdx} onClose={closeSummary} lookup={lookupContext} />
+      )}
+
+      {templatesOpen && (
+        <TemplateManager
+          templates={templates}
+          catalog={resolvedExercises.map((e) => ({ id: e.id, name: e.name }))}
+          onStart={startFromTemplate}
+          onSave={saveTemplate}
+          onDelete={deleteTemplate}
+          onClose={() => setTemplatesOpen(false)}
+        />
+      )}
+
+      {templatePrompt && (
+        <TemplateUpdatePrompt
+          templateName={templatePrompt.template.name}
+          diff={templatePrompt.diff}
+          nameOf={(id) => index.get(id)?.name ?? 'Unavailable exercise'}
+          onUpdate={() => {
+            void saveTemplate({ id: templatePrompt.template.id, name: templatePrompt.template.name, exercise_ids: templatePrompt.lineup });
+            setTemplatePrompt(null);
+          }}
+          onKeep={() => setTemplatePrompt(null)} // safe default: template unchanged
+        />
       )}
 
       {!onboardingSeen && <SafetyOnboarding onAcknowledge={acknowledgeOnboarding} />}

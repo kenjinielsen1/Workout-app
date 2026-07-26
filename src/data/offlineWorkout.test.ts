@@ -35,6 +35,8 @@ class Network implements RemoteSync {
   async pushExercise() { this.guard(); }
   async pushOverride(o: ExerciseOverride) { this.guard(); this.overrides.set(`${o.user_id}::${o.exercise_id}`, o); }
   async deleteSet() { this.guard(); }
+  async pushTemplate() { this.guard(); }
+  async deleteTemplate() { this.guard(); }
 }
 
 const profile: ProgProfile = {

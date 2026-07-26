@@ -2,7 +2,7 @@
 // app boots and a full workout is logged from here with zero network.
 
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Exercise, ExerciseOverride, LoggedSet, Profile, Recommendation, Workout } from './domain';
+import type { Exercise, ExerciseOverride, LoggedSet, Profile, Recommendation, Workout, WorkoutTemplate } from './domain';
 import type { SessionTarget } from '../lib/target';
 import type { WeeklySummary } from '../lib/weeklySummary';
 
@@ -15,7 +15,9 @@ export type SyncOp =
   | { seq?: number; kind: 'profile'; payload: Profile }
   | { seq?: number; kind: 'exercise'; payload: Exercise }
   | { seq?: number; kind: 'override'; payload: ExerciseOverride }
-  | { seq?: number; kind: 'delete-set'; payload: { id: string } };
+  | { seq?: number; kind: 'delete-set'; payload: { id: string } }
+  | { seq?: number; kind: 'template'; payload: WorkoutTemplate }
+  | { seq?: number; kind: 'delete-template'; payload: { id: string } };
 
 /** Local storage row for a per-user machine override (composite key). */
 export interface OverrideRow extends ExerciseOverride {
@@ -55,12 +57,13 @@ export interface PODB extends DBSchema {
   overrides: { key: string; value: OverrideRow; indexes: { by_user: string } };
   sync_queue: { key: number; value: SyncOp };
   weekly_summaries: { key: string; value: WeeklySummaryRow; indexes: { by_user: string } };
+  workout_templates: { key: string; value: WorkoutTemplate; indexes: { by_user: string } };
 }
 
 export type PODatabase = IDBPDatabase<PODB>;
 
 export function openPODB(name = 'progressive-overload'): Promise<PODatabase> {
-  return openDB<PODB>(name, 3, {
+  return openDB<PODB>(name, 4, {
     upgrade(db, oldVersion) {
       if (oldVersion < 1) {
         db.createObjectStore('exercises', { keyPath: 'id' });
@@ -90,6 +93,11 @@ export function openPODB(name = 'progressive-overload'): Promise<PODatabase> {
         // WEEKLY_SUMMARY.md — device-local generated readouts, browsable history.
         const ws = db.createObjectStore('weekly_summaries', { keyPath: 'key' });
         ws.createIndex('by_user', 'user_id');
+      }
+      if (oldVersion < 4) {
+        // SAVED_WORKOUTS.md — named exercise lineups (ids + order only).
+        const tpl = db.createObjectStore('workout_templates', { keyPath: 'id' });
+        tpl.createIndex('by_user', 'user_id');
       }
     },
   });
