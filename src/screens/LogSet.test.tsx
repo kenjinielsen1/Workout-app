@@ -454,3 +454,90 @@ describe('LogSet — manual entry snapping (FIXES_ENTRY.md)', () => {
     expect(onRequestCalibration).toHaveBeenCalled();
   });
 });
+
+// FIXES_ENTRY.md bug 2 — the jump prompt fired every time on a new movement,
+// because it was judging against an n=1 baseline.
+describe('LogSet — big-jump needs enough history (FIXES_ENTRY.md)', () => {
+  beforeEach(() => localStorage.clear());
+
+  const hist = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      date: `2026-07-0${i + 1}T00:00:00Z`,
+      t: Date.parse(`2026-07-0${i + 1}T00:00:00Z`),
+      sets: [{ weight_lb: 100, reps: 8, failed: false }],
+      rir: 2,
+      e1rm: 125,
+    }));
+
+  it('a brand-new movement never shows a jump prompt, at any plausible magnitude', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    const t: SessionTarget = { target_weight_lb: 100, target_reps: 8, target_sets: 3 };
+    // Only one prior set — not enough to judge.
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={t} history={hist(1)} onLogSet={onLogSet} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '405' } }); // 4x, but plausible
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 405 }));
+  });
+
+  it('at 3+ working sets the jump check activates again', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    const t: SessionTarget = { target_weight_lb: 100, target_reps: 8, target_sets: 3 };
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={t} history={hist(3)} onLogSet={onLogSet} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '405' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/big jump/i);
+    expect(onLogSet).not.toHaveBeenCalled();
+  });
+
+  it('the absolute guard still fires on set one', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    const t: SessionTarget = { target_weight_lb: 60, target_reps: 8, target_sets: 3 };
+    render(<LogSet userId="u1" exercise={dumbbell} profile={profile} target={t} onLogSet={onLogSet} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '2250' } }); // four-digit dumbbell
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(onLogSet).not.toHaveBeenCalled();
+  });
+
+  it('warm-up sets do not count toward the threshold', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    const t: SessionTarget = { target_weight_lb: 100, target_reps: 8, target_sets: 3 };
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={t} history={hist(2)} onLogSet={onLogSet} />);
+    // Log a WARM-UP — this must not push the count to 3.
+    await user.click(screen.getByRole('checkbox', { name: /warm-up set/i }));
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    await user.click(screen.getByRole('checkbox', { name: /warm-up set/i })); // back to working
+
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '405' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(); // still only 2 working sets
+  });
+
+  it('loadability and plausibility are independent: a first set can prompt for the grid but never a jump', async () => {
+    const user = userEvent.setup();
+    const t: SessionTarget = { target_weight_lb: 180, target_reps: 10, target_sets: 3 };
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={t} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent(/isn.t selectable/);
+    expect(dialog).not.toHaveTextContent(/big jump/i); // no history to judge against
+  });
+
+  it('when both would fire, exactly ONE combined prompt appears', async () => {
+    const user = userEvent.setup();
+    const t: SessionTarget = { target_weight_lb: 100, target_reps: 10, target_sets: 3 };
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={t} history={hist(3)} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '407' } }); // off-grid AND >2x
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.getAllByRole('alertdialog')).toHaveLength(1);
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent(/isn.t selectable/);
+    expect(dialog).toHaveTextContent(/big jump/i);
+  });
+});

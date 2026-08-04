@@ -24,7 +24,7 @@ import { SessionHistory } from '../components/SessionHistory';
 import { PrCelebration } from '../components/PrCelebration';
 import { FirstTimeHint } from '../components/FirstTimeHint';
 import { haptic } from '../lib/haptics';
-import { AnsweredEntries, checkLoadable, RECALIBRATE_AFTER_KEEPS, type LoadabilityResult } from '../lib/entryCheck';
+import { AnsweredEntries, checkLoadable, isBigJump, isImplausible, RECALIBRATE_AFTER_KEEPS, type LoadabilityResult } from '../lib/entryCheck';
 import { playCue } from '../lib/sound';
 import { useRestTimer } from '../hooks/useRestTimer';
 
@@ -243,12 +243,20 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     }
   };
 
-  // Fat-finger guard (POLISH.md §4): a typo'd 2250 for 225 would silently corrupt
-  // the e1RM. Sanity-bound a working-weight entry against the target (which already
-  // encodes recent history); >2× or <0.5× off asks a gentle confirm before logging.
-  // Warm-ups are intentionally light, so they're exempt.
+  // Logged WORKING sets for this lift: prior sessions (already gym-scoped and
+  // warm-up-free upstream) plus this session's. Gates the relative jump check —
+  // below the threshold there's no basis to call anything anomalous.
+  const workingSetCount =
+    history.reduce((n, h) => n + h.sets.length, 0) + sets.filter((s) => !s.is_warmup).length;
+
+  // Fat-finger guard (POLISH.md §4 + FIXES_ENTRY.md bug 2): a typo'd 2250 for 225
+  // would silently corrupt the e1RM. The RELATIVE check compares against the target
+  // (which encodes recent history) but only once there are enough sets to judge;
+  // the ABSOLUTE bound is history-independent and always on. Warm-ups are
+  // intentionally light, so they're exempt from the relative check only.
   const isAbsurd = (w: number, warmup: boolean) =>
-    !warmup && target.target_weight_lb > 0 && (w > target.target_weight_lb * 2 || w < target.target_weight_lb * 0.5);
+    isImplausible(w, exercise.equipment) ||
+    (!warmup && isBigJump(w, target.target_weight_lb, workingSetCount));
 
   /**
    * THE input boundary for a manually entered weight (FIXES_ENTRY.md). Every manual

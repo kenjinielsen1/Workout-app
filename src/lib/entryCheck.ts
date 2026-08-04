@@ -78,3 +78,50 @@ export class AnsweredEntries {
 /** Overruling us this many times means OUR increment is wrong, not their entry —
  *  stop warning and offer the calibration prompt instead. */
 export const RECALIBRATE_AFTER_KEEPS = 2;
+
+// --- plausibility (FIXES_ENTRY.md bug 2) ------------------------------------
+// The big-jump check compares against recent history. On a brand-new movement that
+// history is a single set, so every later entry looks like a huge deviation from an
+// n=1 baseline and the prompt fires every time. The check isn't wrong — it's being
+// asked to judge without enough data.
+
+/** Logged WORKING sets required before the relative jump check may fire at all.
+ *  Below this the app has no basis for calling anything anomalous. */
+export const JUMP_MIN_SETS = 3;
+
+/** Absolute ceilings per equipment (lb, as logged). Far outside any plausible human
+ *  range — a four-digit dumbbell is a typo on set one or set one hundred. */
+const IMPLAUSIBLE_ABOVE: Partial<Record<Equipment, number>> = {
+  barbell: 1200,
+  dumbbell: 250, // per hand
+  kettlebell: 250,
+  machine_plate: 1500,
+  machine_selectorized: 1500,
+  cable: 1000,
+  bodyweight: 500, // added load
+  band: 500,
+};
+
+/**
+ * History-INDEPENDENT sanity bound. Stays on always, including the very first set,
+ * so suppressing the relative check never removes all protection.
+ */
+export function isImplausible(weightLb: number, equipment: Equipment): boolean {
+  if (!Number.isFinite(weightLb) || weightLb < 0) return true;
+  return weightLb > (IMPLAUSIBLE_ABOVE[equipment] ?? 1500);
+}
+
+/**
+ * The relative big-jump check. Requires JUMP_MIN_SETS logged working sets before it
+ * can fire — for machines the caller counts sets at the CURRENT gym only, and
+ * warm-ups never count (MULTI_GYM.md / FIXES_ENTRY.md).
+ */
+export function isBigJump(
+  weightLb: number,
+  referenceLb: number,
+  workingSetCount: number,
+): boolean {
+  if (workingSetCount < JUMP_MIN_SETS) return false; // not enough history to judge
+  if (referenceLb <= 0) return false;
+  return weightLb > referenceLb * 2 || weightLb < referenceLb * 0.5;
+}
