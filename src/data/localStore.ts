@@ -318,15 +318,15 @@ export class LocalFirstStore implements WorkoutStore {
   // Cache key includes the goal (audit fix #5): a goal change can't serve a target
   // precomputed under the old goal's rep range/proximity — the old key is simply
   // never read, and the caller falls through to a live recompute.
-  async saveNextSession(userId: string, exerciseId: string, target: SessionTarget, goal: Goal): Promise<void> {
+  async saveNextSession(userId: string, exerciseId: string, target: SessionTarget, goal: Goal, gymId: string | null = null): Promise<void> {
     await this.ready;
-    const key = `${userId}::${exerciseId}::${goal}`;
+    const key = `${userId}::${exerciseId}::${goal}::${gymId ?? 'home'}`;
     await this.db.put('next_sessions', { key, user_id: userId, exercise_id: exerciseId, target });
   }
 
-  async getNextSession(userId: string, exerciseId: string, goal: Goal): Promise<SessionTarget | null> {
+  async getNextSession(userId: string, exerciseId: string, goal: Goal, gymId: string | null = null): Promise<SessionTarget | null> {
     await this.ready;
-    return (await this.db.get('next_sessions', `${userId}::${exerciseId}::${goal}`))?.target ?? null;
+    return (await this.db.get('next_sessions', `${userId}::${exerciseId}::${goal}::${gymId ?? 'home'}`))?.target ?? null;
   }
 
   // --- weekly summaries (WEEKLY_SUMMARY.md) — device-local, browsable history ---

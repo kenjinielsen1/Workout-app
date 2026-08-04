@@ -210,3 +210,23 @@ describe('person-level data aggregates across ALL gyms (MULTI_GYM.md)', () => {
     expect(week.get('quadriceps')).toBe(3);
   });
 });
+
+describe('the cold-start fallback does not leak another gym\'s numbers', () => {
+  it('deriveInitialTarget at a new gym never repeats the home gym\'s last set', async () => {
+    const { deriveInitialTarget } = await import('./target');
+    const machine = { id: 'legpress', equipment: 'machine_plate' as const, is_compound: true };
+    const history = [
+      { exercise_id: 'legpress', gym_id: HOME, sets: [{ weight_lb: 410, reps: 10 }] },
+    ] as never[];
+
+    // At home: repeats the last working set, as always.
+    const atHome = scopeHistoryToGym(history, machine, HOME, HOME).filter((s) => s.exercise_id === 'legpress');
+    expect(deriveInitialTarget(atHome as never, machine, 'hypertrophy').target_weight_lb).toBe(410);
+
+    // At the away gym: no history here, so it must NOT show 410 — it falls to the
+    // equipment default and the cold-start prompt offers to seed it.
+    const away = scopeHistoryToGym(history, machine, AWAY, HOME).filter((s) => s.exercise_id === 'legpress');
+    expect(away).toEqual([]);
+    expect(deriveInitialTarget(away as never, machine, 'hypertrophy').target_weight_lb).not.toBe(410);
+  });
+});

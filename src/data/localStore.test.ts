@@ -411,3 +411,19 @@ describe('multi-gym (MULTI_GYM.md)', () => {
     expect(sessions.find((s) => s.exercise_id === 'leg-press')?.sets).toHaveLength(1); // sets survive
   });
 });
+
+describe('next-session cache is keyed by GYM too (MULTI_GYM.md)', () => {
+  const target = { target_weight_lb: 400, target_reps: 8, target_sets: 3 };
+
+  it('a precomputed target from one gym is never served at another', async () => {
+    const store = new LocalFirstStore({ dbName: dbName() });
+    const a = await store.ensureHomeGym(U);
+    const b = await store.saveGym(U, { name: 'Hotel gym' });
+
+    // Precomputed at the home gym's leg press.
+    await store.saveNextSession(U, 'leg-press', target, 'hypertrophy', a.id);
+    expect(await store.getNextSession(U, 'leg-press', 'hypertrophy', a.id)).toEqual(target);
+    // At the other gym the key misses → the caller recomputes (and cold-starts).
+    expect(await store.getNextSession(U, 'leg-press', 'hypertrophy', b.id)).toBeNull();
+  });
+});

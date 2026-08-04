@@ -44,7 +44,7 @@ import { TemplateManager } from '../components/TemplateManager';
 import { TemplateUpdatePrompt } from '../components/TemplateUpdatePrompt';
 import { lineupFromSession, structuralDiff, type TemplateDiff } from '../lib/workoutTemplates';
 import { GymSwitcher } from '../components/GymSwitcher';
-import { effectiveEquipment, shouldConfirmGym, type GymScope } from '../lib/gyms';
+import { effectiveEquipment, scopeHistoryToGym, shouldConfirmGym, type GymScope } from '../lib/gyms';
 import type { VolumeLookupContext } from '../components/VolumeLookupDrawer';
 import { buildWeeklySummary, type WeeklySummary } from '../lib/weeklySummary';
 import { collectWeeklySummary } from '../lib/weeklySummaryCollect';
@@ -351,12 +351,16 @@ export function Home() {
       // OFFLINE-FIRST live path: the shown number is pure local TS, no network.
       // Prefer a target precomputed at the last session's finish — but only when
       // nothing this week changes it (today's check-in, or a planned deload).
-      const precomputed = (await store.getNextSession(userId, exId, p.goal)) as FinalTarget | null;
+      const precomputed = (await store.getNextSession(userId, exId, p.goal, gymScope.gymId)) as FinalTarget | null;
       const fresh =
         readinessValue === 0 && !plannedDeload && precomputed
           ? precomputed
           : recommendTarget(all, ex, index, p, null, p.ml_alpha_cap, readinessValue, plannedDeload, gymScope);
-      const shown = fresh ?? deriveInitialTarget(all.filter((s) => s.exercise_id === exId), ex, p.goal);
+      // MULTI_GYM.md: the cold-start fallback must not repeat ANOTHER gym's last
+      // set — scope its history exactly like the engine's (machines only).
+      const ownHistory = scopeHistoryToGym(all, ex, gymScope.gymId, gymScope.homeGymId)
+        .filter((s) => s.exercise_id === exId);
+      const shown = fresh ?? deriveInitialTarget(ownHistory, ex, p.goal);
       setTarget(shown);
       // Cold start: no real history → the shown number is a crude equipment default.
       // Offer a one-time seed from a set the user remembers (audit fix #5).
@@ -623,7 +627,7 @@ export function Home() {
     if (profile && ex) {
       const all = await store.getAllSessions(userId);
       const next = recommendTarget(all, ex, index, effectiveProfile ?? profile, null, profile.ml_alpha_cap, null, false, gymScope);
-      if (next) await store.saveNextSession(userId, selectedId, next, profile.goal);
+      if (next) await store.saveNextSession(userId, selectedId, next, profile.goal, gymScope.gymId);
     }
     if (effectiveProfile) await computeTarget(selectedId, effectiveProfile);
 
