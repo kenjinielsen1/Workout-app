@@ -107,6 +107,7 @@ export function Home() {
   const [pairIds, setPairIds] = useState<[string, string] | null>(null);
   const [pairedTarget, setPairedTarget] = useState<SessionTarget | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Session-start readiness check-in (FEATURES.md #2). Persisted per calendar day
   // so it survives reloads and re-asks tomorrow. `dismissed` covers skip too.
@@ -969,45 +970,10 @@ export function Home() {
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-10 flex flex-col gap-2 border-b border-neutral-200 bg-white/90 px-4 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <button
-              type="button"
-              aria-label="Exercise"
-              onClick={() => setPickerOpen(true)}
-              className="flex min-w-0 items-center gap-1 rounded-lg bg-neutral-100 px-3 py-1.5 text-sm font-semibold dark:bg-neutral-800"
-            >
-              <span className="truncate">{selected.name}</span>
-              <span aria-hidden className="text-neutral-400">▾</span>
-            </button>
-            {!pairIds && (
-              <button
-                type="button"
-                aria-label="Pair exercise"
-                onClick={() => {
-                  setPickerMode('pair');
-                  setPickerOpen(true);
-                }}
-                className="shrink-0 rounded-lg bg-neutral-100 px-2.5 py-1.5 text-sm font-semibold text-neutral-500 active:scale-[0.98] dark:bg-neutral-800 dark:text-neutral-400"
-              >
-                ⇄ Pair
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-3 text-xs text-neutral-500 dark:text-neutral-400">
-            {blockPhase && (
-              <span
-                aria-label="Training phase"
-                className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold sm:inline ${
-                  blockPhase.deload
-                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
-                    : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
-                }`}
-                title={blockPhase.label}
-              >
-                {blockPhase.phase === 'deload' ? 'Deload wk' : blockPhase.phase === 'intensification' ? 'Intensify' : 'Build'} · wk {blockPhase.weekInBlock}
-              </span>
-            )}
+        {/* Row 1 — quiet context. Gym + block phase on the left, everything else
+            folded into one menu so it can't crowd the exercise selector. */}
+        <div className="flex items-center justify-between gap-2 text-xs text-neutral-500">
+          <div className="flex min-w-0 items-center gap-3">
             <GymSwitcher
               gyms={gyms}
               currentId={currentGymId}
@@ -1016,25 +982,72 @@ export function Home() {
               onAdd={(n) => void addGym(n)}
               onDismissConfirm={() => setGymConfirmed(true)}
             />
-            <button type="button" onClick={() => setTemplatesOpen(true)} className="font-semibold hover:underline">
-              Workouts
-            </button>
-            {summaries.length > 0 && (
-              <button
-                type="button"
-                onClick={() => { setSummaryIdx(0); setSummaryOpen(true); }}
-                className="font-semibold hover:underline"
+            {blockPhase && (
+              <span
+                aria-label="Training phase"
+                className={`truncate text-[11px] font-semibold ${blockPhase.deload ? 'text-amber-400' : 'text-neutral-500'}`}
+                title={blockPhase.label}
               >
-                Week
-              </button>
+                {blockPhase.phase === 'deload' ? 'Deload wk' : blockPhase.phase === 'intensification' ? 'Intensify' : 'Build'} · wk {blockPhase.weekInBlock}
+              </span>
             )}
-            <button type="button" onClick={() => setSettingsOpen(true)} className="font-semibold hover:underline">
-              ⚙ Settings
-            </button>
-            <button type="button" onClick={signOut} className="hover:underline">
-              Sign out
-            </button>
           </div>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-label="Menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+              className="rounded-lg px-2 py-1 text-base text-neutral-400"
+            >
+              ⋯
+            </button>
+            {menuOpen && (
+              <>
+                {/* click-away */}
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute right-0 top-full z-20 mt-1 flex w-40 flex-col rounded-xl border border-neutral-700 bg-neutral-900 p-1 text-sm">
+                <button type="button" onClick={() => { setTemplatesOpen(true); setMenuOpen(false); }}
+                  className="rounded-lg px-3 py-2.5 text-left text-neutral-200 active:bg-neutral-800">Workouts</button>
+                {summaries.length > 0 && (
+                  <button type="button" onClick={() => { setSummaryIdx(0); setSummaryOpen(true); setMenuOpen(false); }}
+                    className="rounded-lg px-3 py-2.5 text-left text-neutral-200 active:bg-neutral-800">Your week</button>
+                )}
+                <button type="button" onClick={() => { setSettingsOpen(true); setMenuOpen(false); }}
+                  className="rounded-lg px-3 py-2.5 text-left text-neutral-200 active:bg-neutral-800">Settings</button>
+                <button type="button" onClick={signOut}
+                  className="rounded-lg px-3 py-2.5 text-left text-neutral-500 active:bg-neutral-800">Sign out</button>
+              </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2 — the exercise selector. The most-tapped control on the screen, so
+            it gets its own full-width row at a real thumb size (DESIGN.md). */}
+        <div className="flex items-stretch gap-2">
+          <button
+            type="button"
+            aria-label="Exercise"
+            onClick={() => setPickerOpen(true)}
+            className="flex min-h-12 min-w-0 flex-1 items-center justify-between gap-2 rounded-2xl bg-neutral-800 px-4 py-2.5 text-left"
+          >
+            <span className="truncate text-lg font-semibold text-neutral-100">{selected.name}</span>
+            <span aria-hidden className="shrink-0 text-neutral-500">▾</span>
+          </button>
+          {!pairIds && (
+            <button
+              type="button"
+              aria-label="Pair exercise"
+              onClick={() => {
+                setPickerMode('pair');
+                setPickerOpen(true);
+              }}
+              className="min-h-12 shrink-0 rounded-2xl border border-neutral-700 px-3.5 text-sm font-semibold text-neutral-400 active:scale-[0.98]"
+            >
+              ⇄
+            </button>
+          )}
         </div>
         <nav className="flex items-center justify-between gap-1">
           <div className="flex gap-1">
