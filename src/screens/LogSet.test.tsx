@@ -24,6 +24,11 @@ const profile: LogSetProfile = {
   dumbbell_increment_lb: 5,
 };
 const target: SessionTarget = { target_weight_lb: 225, target_reps: 5, target_sets: 3 };
+// A stack machine: 10 lb steps, so 187 is not selectable.
+const stack: LogSetExercise = {
+  name: 'Leg Press', equipment: 'machine_selectorized', load_type: 'total',
+  default_increment_lb: 10, is_compound: true,
+};
 
 describe('LogSet screen', () => {
   beforeEach(() => localStorage.clear()); // rest-timer state must not leak across tests
@@ -371,5 +376,81 @@ describe('LogSet — exercise pairing (PAIRING.md)', () => {
     // On B — no set logged in this mount — the SAME rest is still counting down.
     render(<LogSet userId="u1" exercise={lateral} profile={profile} target={{ target_weight_lb: 20, target_reps: 15, target_sets: 3 }} priorBestE1RM={1000} nextUpName="Barbell Back Squat" />);
     expect(screen.getByLabelText('rest timer')).toBeInTheDocument();
+  });
+});
+
+// FIXES_ENTRY.md bug 1 — manual entry must pass through the loadability grid.
+describe('LogSet — manual entry snapping (FIXES_ENTRY.md)', () => {
+  beforeEach(() => localStorage.clear());
+
+  const machineTarget: SessionTarget = { target_weight_lb: 180, target_reps: 10, target_sets: 3 };
+
+  it('an on-grid entry logs with no interruption', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={onLogSet} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '190' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 190 }));
+  });
+
+  it('an off-grid entry names both values and the step', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={onLogSet} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+
+    const dialog = screen.getByRole('alertdialog', { name: /confirm weight/i });
+    expect(dialog).toHaveTextContent(/187 lb isn.t selectable/);
+    expect(dialog).toHaveTextContent(/10 lb steps/);
+    expect(onLogSet).not.toHaveBeenCalled(); // nothing logged until answered
+  });
+
+  it('"Use" logs the snapped value; "Keep" logs exactly what was typed', async () => {
+    const user = userEvent.setup();
+    const useIt = vi.fn();
+    const r = render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={useIt} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    await user.click(screen.getByRole('button', { name: /use 190 lb/i }));
+    expect(useIt).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 190 }));
+    r.unmount();
+
+    const keepIt = vi.fn();
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={keepIt} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    await user.click(screen.getByRole('button', { name: /keep 187 lb/i }));
+    expect(keepIt).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 187 })); // unchanged
+  });
+
+  it('does not re-ask for the same exercise + weight in the session', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={onLogSet} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    await user.click(screen.getByRole('button', { name: /keep 187 lb/i }));
+
+    // Same weight again — logs straight through, no second prompt.
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onLogSet).toHaveBeenCalledTimes(2);
+  });
+
+  it('repeatedly keeping off-grid values surfaces the calibration prompt', async () => {
+    const onRequestCalibration = vi.fn();
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onRequestCalibration={onRequestCalibration} />);
+    for (const w of ['187', '193']) {
+      fireEvent.change(screen.getByTestId('weight-input'), { target: { value: w } });
+      await user.click(screen.getByRole('button', { name: 'Log set' }));
+      await user.click(screen.getByRole('button', { name: new RegExp(`keep ${w} lb`, 'i') }));
+    }
+    // Two overrules = our increment is wrong, so ask for the real step.
+    expect(onRequestCalibration).toHaveBeenCalled();
   });
 });
