@@ -662,7 +662,16 @@ export function Home() {
   }, [store, userId, resolvedExercises, index, selectedId, profile, target, computeTarget, stopTimer, activeTemplate]);
 
   const selected = resolvedExercises.find((e) => e.id === selectedId);
-  const detailSessions = allSessions.filter((s) => s.exercise_id === selectedId);
+  // MULTI_GYM.md: this feeds the Detail chart, the "Last time" glance, AND the PR
+  // baseline — so it must be gym-scoped too, or a machine at a new gym shows the
+  // other gym's curve merged into one line. Barbell/dumbbell pass through whole.
+  const detailSessions = useMemo(
+    () =>
+      selected
+        ? scopeHistoryToGym(allSessions, selected, gymScope.gymId, gymScope.homeGymId).filter((s) => s.exercise_id === selectedId)
+        : [],
+    [allSessions, selected, selectedId, gymScope],
+  );
 
   // Historical best e1RM for the selected lift, for live PR flagging (FEATURES.md #4).
   const priorBestE1RM = useMemo(() => {

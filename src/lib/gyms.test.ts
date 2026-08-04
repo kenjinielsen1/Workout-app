@@ -217,7 +217,7 @@ describe('the cold-start fallback does not leak another gym\'s numbers', () => {
     const machine = { id: 'legpress', equipment: 'machine_plate' as const, is_compound: true };
     const history = [
       { exercise_id: 'legpress', gym_id: HOME, sets: [{ weight_lb: 410, reps: 10 }] },
-    ] as never[];
+    ];
 
     // At home: repeats the last working set, as always.
     const atHome = scopeHistoryToGym(history, machine, HOME, HOME).filter((s) => s.exercise_id === 'legpress');
@@ -228,5 +228,32 @@ describe('the cold-start fallback does not leak another gym\'s numbers', () => {
     const away = scopeHistoryToGym(history, machine, AWAY, HOME).filter((s) => s.exercise_id === 'legpress');
     expect(away).toEqual([]);
     expect(deriveInitialTarget(away as never, machine, 'hypertrophy').target_weight_lb).not.toBe(410);
+  });
+});
+
+describe('Detail chart, "Last time", and PR baseline are gym-scoped too', () => {
+  // These all derive from the same filtered session list in Home, so one leak there
+  // showed the other gym's curve merged into one line (MULTI_GYM.md).
+  const cable = { id: 'pulldown', equipment: 'cable' as const, load_type: 'total' as const };
+  const history = [
+    { exercise_id: 'pulldown', gym_id: HOME, performed_at: '2026-07-01T18:00:00Z', session_rpe: 8, sets: [{ weight_lb: 200, reps: 10, is_warmup: false, failed: false }] },
+    { exercise_id: 'pulldown', gym_id: AWAY, performed_at: '2026-07-08T18:00:00Z', session_rpe: 8, sets: [{ weight_lb: 120, reps: 10, is_warmup: false, failed: false }] },
+  ];
+  const detailFor = (gymId: string) =>
+    scopeHistoryToGym(history, cable, gymId, HOME).filter((s) => s.exercise_id === 'pulldown');
+
+  it('the away gym sees only its own sessions — never the home curve merged in', () => {
+    expect(detailFor(AWAY).map((s) => s.sets[0]!.weight_lb)).toEqual([120]);
+    expect(detailFor(HOME).map((s) => s.sets[0]!.weight_lb)).toEqual([200]);
+  });
+
+  it('the PR baseline does not carry across gyms', async () => {
+    const { summarize } = await import('./exerciseStats');
+    const user = { bodyweight_lb: 185 };
+    const awayBest = summarize(detailFor(AWAY) as never, cable, user).bestE1RM ?? 0;
+    const homeBest = summarize(detailFor(HOME) as never, cable, user).bestE1RM ?? 0;
+    // A 120 lb pulldown at the away gym isn't judged against the home gym's 200.
+    expect(awayBest).toBeLessThan(homeBest);
+    expect(awayBest).toBeGreaterThan(0);
   });
 });
