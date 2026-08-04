@@ -28,8 +28,6 @@ export interface Exercise {
   variant_of: string | null;
 }
 
-/** Per-user, per-exercise override of a machine's increment/min — the same
- *  machine differs between gyms (INCREMENTS.md). */
 /**
  * A saved workout (SAVED_WORKOUTS.md): WHICH exercises, in WHAT order. Nothing
  * else. There is deliberately no weight/rep/set field — those come from the engine,
@@ -44,6 +42,33 @@ export interface WorkoutTemplate {
   updated_at: string;
 }
 
+/**
+ * A gym (MULTI_GYM.md). Equipment settings live HERE, not on the user: increments,
+ * micro plates, dumbbell step, and plate system are properties of a building.
+ * Exactly one gym per user is `is_home`.
+ */
+export interface Gym {
+  id: string;
+  user_id: string;
+  name: string;
+  is_home: boolean;
+  has_micro_plates: boolean;
+  dumbbell_increment_lb: number;
+  plate_system: PlateSystem;
+  created_at: string;
+}
+
+/** Per-GYM machine calibration — replaces the per-user override (INCREMENTS.md).
+ *  Calibrating a cable at gym B must never touch gym A's value. */
+export interface GymExerciseOverride {
+  gym_id: string;
+  exercise_id: string;
+  weight_increment_lb: number | null;
+  weight_stack_min_lb: number | null;
+}
+
+/** Legacy per-user override (INCREMENTS.md), superseded by GymExerciseOverride.
+ *  Kept so pre-gym data migrates losslessly onto the home gym. */
 export interface ExerciseOverride {
   user_id: string;
   exercise_id: string;
@@ -94,6 +119,8 @@ export interface Workout {
   id: string;
   user_id: string;
   performed_at: string;
+  /** Gym this session happened at (MULTI_GYM.md). Null = legacy / home. */
+  gym_id?: string | null;
   notes: string | null;
   session_rpe: number | null;
   /** Session-start readiness check-in (FEATURES.md #2); null when skipped. */
@@ -144,6 +171,8 @@ export interface LoggedSession {
 export interface AllSession {
   exercise_id: string;
   performed_at: string;
+  /** Gym context, for scoping MACHINE history (MULTI_GYM.md). */
+  gym_id?: string | null;
   session_rpe: number | null;
   sets: LoggedSet[];
 }

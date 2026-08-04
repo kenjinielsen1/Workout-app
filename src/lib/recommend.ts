@@ -13,6 +13,7 @@ import {
 import { buildProgContext } from './progContext';
 import { recommendProgression, type ProgProfile } from './progression';
 import { finalizeTarget, type FinalTarget, type MLPrediction } from './blend';
+import { scopeHistoryToGym, type GymScope } from './gyms';
 import { snapToLoadable } from './rounding';
 
 const DAY = 86_400_000;
@@ -46,11 +47,16 @@ export function recommendTarget(
   alphaCap = 1,
   dailyReadinessValue: number | null = null,
   plannedDeload = false,
+  gym: GymScope | null = null,
 ): FinalTarget | null {
-  const series = metricsSeries(allSessions, ex, profile);
+  // A machine at a NEW gym has no history here, so this returns null and the caller
+  // falls through to the cold-start estimation path — correct, not a bug: the app
+  // genuinely doesn't know that machine yet (MULTI_GYM.md).
+  const scoped = scopeHistoryToGym(allSessions, ex, gym?.gymId ?? null, gym?.homeGymId ?? null);
+  const series = metricsSeries(scoped, ex, profile);
   if (series.length === 0) return null;
 
-  const ctx = buildProgContext(allSessions, ex, index, profile, undefined, dailyReadinessValue, plannedDeload);
+  const ctx = buildProgContext(allSessions, ex, index, profile, undefined, dailyReadinessValue, plannedDeload, gym);
   const rule = recommendProgression(ctx);
 
   const last = series[series.length - 1]!;

@@ -137,7 +137,8 @@ export function groupAllSessions(sets: LoggedSet[], workouts: Map<string, Workou
     const key = `${s.workout_id}::${s.exercise_id}`;
     let g = byKey.get(key);
     if (!g) {
-      g = { exercise_id: s.exercise_id, performed_at: w.performed_at, session_rpe: w.session_rpe, sets: [] };
+      // gym_id rides along so MACHINE history can be scoped per gym (MULTI_GYM.md).
+      g = { exercise_id: s.exercise_id, performed_at: w.performed_at, gym_id: w.gym_id ?? null, session_rpe: w.session_rpe, sets: [] };
       byKey.set(key, g);
     }
     g.sets.push(s);

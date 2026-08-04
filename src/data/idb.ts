@@ -2,7 +2,7 @@
 // app boots and a full workout is logged from here with zero network.
 
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Exercise, ExerciseOverride, LoggedSet, Profile, Recommendation, Workout, WorkoutTemplate } from './domain';
+import type { Exercise, ExerciseOverride, Gym, GymExerciseOverride, LoggedSet, Profile, Recommendation, Workout, WorkoutTemplate } from './domain';
 import type { SessionTarget } from '../lib/target';
 import type { WeeklySummary } from '../lib/weeklySummary';
 
@@ -17,7 +17,9 @@ export type SyncOp =
   | { seq?: number; kind: 'override'; payload: ExerciseOverride }
   | { seq?: number; kind: 'delete-set'; payload: { id: string } }
   | { seq?: number; kind: 'template'; payload: WorkoutTemplate }
-  | { seq?: number; kind: 'delete-template'; payload: { id: string } };
+  | { seq?: number; kind: 'delete-template'; payload: { id: string } }
+  | { seq?: number; kind: 'gym'; payload: Gym }
+  | { seq?: number; kind: 'gym-override'; payload: GymExerciseOverride };
 
 /** Local storage row for a per-user machine override (composite key). */
 export interface OverrideRow extends ExerciseOverride {
@@ -29,6 +31,11 @@ export interface NextSessionRow {
   user_id: string;
   exercise_id: string;
   target: SessionTarget;
+}
+
+/** Local row for a per-gym machine override (composite key). */
+export interface GymOverrideRow extends GymExerciseOverride {
+  key: string; // `${gym_id}::${exercise_id}`
 }
 
 export interface AliasRow {
@@ -58,12 +65,14 @@ export interface PODB extends DBSchema {
   sync_queue: { key: number; value: SyncOp };
   weekly_summaries: { key: string; value: WeeklySummaryRow; indexes: { by_user: string } };
   workout_templates: { key: string; value: WorkoutTemplate; indexes: { by_user: string } };
+  gyms: { key: string; value: Gym; indexes: { by_user: string } };
+  gym_overrides: { key: string; value: GymOverrideRow; indexes: { by_gym: string } };
 }
 
 export type PODatabase = IDBPDatabase<PODB>;
 
 export function openPODB(name = 'progressive-overload'): Promise<PODatabase> {
-  return openDB<PODB>(name, 4, {
+  return openDB<PODB>(name, 5, {
     upgrade(db, oldVersion) {
       if (oldVersion < 1) {
         db.createObjectStore('exercises', { keyPath: 'id' });
@@ -98,6 +107,13 @@ export function openPODB(name = 'progressive-overload'): Promise<PODatabase> {
         // SAVED_WORKOUTS.md — named exercise lineups (ids + order only).
         const tpl = db.createObjectStore('workout_templates', { keyPath: 'id' });
         tpl.createIndex('by_user', 'user_id');
+      }
+      if (oldVersion < 5) {
+        // MULTI_GYM.md — gyms own equipment settings; overrides key by gym.
+        const gyms = db.createObjectStore('gyms', { keyPath: 'id' });
+        gyms.createIndex('by_user', 'user_id');
+        const go = db.createObjectStore('gym_overrides', { keyPath: 'key' });
+        go.createIndex('by_gym', 'gym_id');
       }
     },
   });

@@ -15,11 +15,12 @@ import { PROFILE_DEFAULTS } from './dbTypes';
 import { CONFIG_VERSION } from '../lib/evidenceConfig';
 import { demoHistory, seedExercises } from './seedCatalog';
 import type {
-  AllSession, CreateExerciseInput, Exercise, ExerciseOverride, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, PlateauChoice, Workout, WorkoutCheckin, WorkoutTemplate,
+  AllSession, CreateExerciseInput, Exercise, ExerciseOverride, LoggedSession, LoggedSet, OutcomeJson, OutcomeRow, Profile, Recommendation, PlateauChoice, Workout, WorkoutCheckin, WorkoutTemplate, Gym, GymExerciseOverride,
 } from './domain';
 import { slugify } from '../lib/newExercise';
 import type { LogSetInput, SaveRecommendationInput, WorkoutStore } from './store';
 import type { Goal } from '../lib/types';
+import type { GymEquipment } from '../lib/gyms';
 import type { RemoteSync } from './remoteSync';
 import type { RemoteSource } from './remoteSource';
 
@@ -221,10 +222,11 @@ export class LocalFirstStore implements WorkoutStore {
   }
 
   // --- writes (local-first, enqueue sync) -----------------------------------
-  async startWorkout(userId: string, performedAt?: string, checkin?: WorkoutCheckin): Promise<Workout> {
+  async startWorkout(userId: string, performedAt?: string, checkin?: WorkoutCheckin, gymId?: string | null): Promise<Workout> {
     await this.ready;
     const w: Workout = {
       id: uuid(), user_id: userId, performed_at: performedAt ?? new Date().toISOString(),
+      gym_id: gymId ?? null, // MULTI_GYM.md: which building this happened at
       notes: null, session_rpe: null,
       sleep_quality: checkin?.sleep_quality ?? null,
       soreness: checkin?.soreness ?? null,
@@ -359,6 +361,99 @@ export class LocalFirstStore implements WorkoutStore {
     return this.db.getAllFromIndex('recommendations', 'by_user', userId);
   }
 
+  // --- gyms (MULTI_GYM.md) --------------------------------------------------
+  // Equipment settings live on the GYM. Machine calibration keys by gym, so
+  // calibrating a cable at gym B can never touch gym A's value.
+
+  async listGyms(userId: string): Promise<Gym[]> {
+    await this.ready;
+    const rows = await this.db.getAllFromIndex('gyms', 'by_user', userId);
+    return rows.sort((a, b) => Number(b.is_home) - Number(a.is_home) || a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Guarantee a home gym exists, migrating pre-gym data onto it losslessly: the
+   * user's equipment settings and every legacy per-user machine override move to
+   * the home gym. Mirrors the SQL backfill, so a single-gym user sees no change.
+   */
+  async ensureHomeGym(userId: string): Promise<Gym> {
+    await this.ready;
+    const existing = await this.listGyms(userId);
+    const home = existing.find((g) => g.is_home);
+    if (home) return home;
+
+    const p = await this.getProfile(userId);
+    const gym: Gym = {
+      id: uuid(),
+      user_id: userId,
+      name: 'Home gym',
+      is_home: true,
+      has_micro_plates: p.has_micro_plates,
+      dumbbell_increment_lb: p.dumbbell_increment_lb,
+      plate_system: p.plate_system,
+      created_at: new Date().toISOString(),
+    };
+    await this.db.put('gyms', gym);
+    await this.enqueue({ kind: 'gym', payload: gym });
+
+    // Carry legacy per-user calibration over — never lose a measured machine step.
+    for (const o of await this.getOverrides(userId)) {
+      await this.setGymOverride(gym.id, o.exercise_id, {
+        weight_increment_lb: o.weight_increment_lb,
+        weight_stack_min_lb: o.weight_stack_min_lb,
+      });
+    }
+    return gym;
+  }
+
+  async saveGym(userId: string, input: { id?: string; name: string } & Partial<GymEquipment>): Promise<Gym> {
+    await this.ready;
+    const existing = input.id ? await this.db.get('gyms', input.id) : undefined;
+    const p = await this.getProfile(userId);
+    const gym: Gym = {
+      id: input.id ?? uuid(),
+      user_id: userId,
+      name: input.name.trim(),
+      is_home: existing?.is_home ?? false,
+      has_micro_plates: input.has_micro_plates ?? existing?.has_micro_plates ?? p.has_micro_plates,
+      dumbbell_increment_lb: input.dumbbell_increment_lb ?? existing?.dumbbell_increment_lb ?? p.dumbbell_increment_lb,
+      plate_system: input.plate_system ?? existing?.plate_system ?? p.plate_system,
+      created_at: existing?.created_at ?? new Date().toISOString(),
+    };
+    await this.db.put('gyms', gym);
+    await this.enqueue({ kind: 'gym', payload: gym });
+    return gym;
+  }
+
+  /** Deleting a gym NEVER deletes its logged sets — the workouts keep their
+   *  gym_id and simply render against a missing gym. History is sacred. */
+  async deleteGym(id: string): Promise<void> {
+    await this.ready;
+    await this.db.delete('gyms', id);
+  }
+
+  async getGymOverrides(gymId: string): Promise<GymExerciseOverride[]> {
+    await this.ready;
+    const rows = await this.db.getAllFromIndex('gym_overrides', 'by_gym', gymId);
+    return rows.map(({ key: _key, ...o }) => o);
+  }
+
+  async setGymOverride(
+    gymId: string,
+    exerciseId: string,
+    patch: Pick<GymExerciseOverride, 'weight_increment_lb' | 'weight_stack_min_lb'>,
+  ): Promise<void> {
+    await this.ready;
+    const override: GymExerciseOverride = {
+      gym_id: gymId,
+      exercise_id: exerciseId,
+      weight_increment_lb: patch.weight_increment_lb ?? null,
+      weight_stack_min_lb: patch.weight_stack_min_lb ?? null,
+    };
+    await this.db.put('gym_overrides', { key: `${gymId}::${exerciseId}`, ...override });
+    await this.enqueue({ kind: 'gym-override', payload: override });
+  }
+
   // --- saved workouts (SAVED_WORKOUTS.md) -----------------------------------
   // Exercise ids + order ONLY. Never weights, reps, or sets — those come from the
   // engine each session. Local-first: fully usable offline, synced idempotently.
@@ -418,6 +513,8 @@ export class LocalFirstStore implements WorkoutStore {
             case 'delete-set': await remote.deleteSet(op.payload.id); break;
             case 'template': await remote.pushTemplate(op.payload); break;
             case 'delete-template': await remote.deleteTemplate(op.payload.id); break;
+            case 'gym': await remote.pushGym(op.payload); break;
+            case 'gym-override': await remote.pushGymOverride(op.payload); break;
           }
           if (op.seq !== undefined) await this.db.delete('sync_queue', op.seq);
           flushed++;

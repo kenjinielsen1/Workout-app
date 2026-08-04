@@ -3,7 +3,7 @@
 // already synced simply overwrites itself (last-write-wins, single user/device).
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Exercise, ExerciseOverride, OutcomeJson, Profile, Recommendation, Workout, LoggedSet, WorkoutTemplate } from './domain';
+import type { Exercise, ExerciseOverride, Gym, GymExerciseOverride, OutcomeJson, Profile, Recommendation, Workout, LoggedSet, WorkoutTemplate } from './domain';
 
 export interface RemoteSync {
   pushWorkout(w: Workout): Promise<void>;
@@ -16,6 +16,8 @@ export interface RemoteSync {
   deleteSet(id: string): Promise<void>;
   pushTemplate(t: WorkoutTemplate): Promise<void>;
   deleteTemplate(id: string): Promise<void>;
+  pushGym(g: Gym): Promise<void>;
+  pushGymOverride(o: GymExerciseOverride): Promise<void>;
 }
 
 /**
@@ -34,6 +36,7 @@ export class SupabaseRemoteSync implements RemoteSync {
   pushWorkout(w: Workout): Promise<void> {
     return this.upsert('workouts', {
       id: w.id, user_id: w.user_id, performed_at: w.performed_at,
+      gym_id: w.gym_id ?? null,
       notes: w.notes, session_rpe: w.session_rpe,
       sleep_quality: w.sleep_quality, soreness: w.soreness,
       energy: w.energy, readiness_score: w.readiness_score,
@@ -110,6 +113,21 @@ export class SupabaseRemoteSync implements RemoteSync {
     const rows = t.exercise_ids.map((exercise_id, position) => ({ template_id: t.id, exercise_id, position }));
     const { error } = await this.db.from('workout_template_exercises').insert(rows);
     if (error) throw error;
+  }
+
+  pushGym(g: Gym): Promise<void> {
+    return this.upsert('gyms', {
+      id: g.id, user_id: g.user_id, name: g.name, is_home: g.is_home,
+      has_micro_plates: g.has_micro_plates, dumbbell_increment_lb: g.dumbbell_increment_lb,
+      plate_system: g.plate_system, created_at: g.created_at,
+    });
+  }
+
+  pushGymOverride(o: GymExerciseOverride): Promise<void> {
+    return this.upsert('gym_exercise_overrides', {
+      gym_id: o.gym_id, exercise_id: o.exercise_id,
+      weight_increment_lb: o.weight_increment_lb, weight_stack_min_lb: o.weight_stack_min_lb,
+    }, 'gym_id,exercise_id');
   }
 
   async deleteTemplate(id: string): Promise<void> {

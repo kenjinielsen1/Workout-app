@@ -5,6 +5,7 @@
 // the engine can't derive from a single exercise's history alone.
 
 import { acwr, metricsSeries, type FeatureExercise, type FeatureSession } from './features';
+import { scopeHistoryToGym, type GymScope } from './gyms';
 import {
   recommendProgression,
   type ProgContext,
@@ -46,11 +47,16 @@ export function buildProgContext(
   refT?: number,
   dailyReadinessValue: number | null = null,
   plannedDeload = false,
+  gym: GymScope | null = null,
 ): ProgContext {
-  const exerciseSessions = allSessions
+  // MULTI_GYM.md rule 2: scope only THIS exercise's history when it's a machine —
+  // barbell/dumbbell history is never split. Everything else passes through, so the
+  // person-level ACWR below still sees the full picture across all gyms.
+  const scoped = scopeHistoryToGym(allSessions, ex, gym?.gymId ?? null, gym?.homeGymId ?? null);
+  const exerciseSessions = scoped
     .filter((s) => s.exercise_id === ex.id)
     .sort((a, b) => t(a.performed_at) - t(b.performed_at));
-  const metrics = metricsSeries(allSessions, ex, profile);
+  const metrics = metricsSeries(scoped, ex, profile);
 
   const reference =
     refT ?? (metrics.length ? metrics[metrics.length - 1]!.t + 1 : Date.now());

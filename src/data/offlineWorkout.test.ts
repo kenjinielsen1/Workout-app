@@ -37,6 +37,8 @@ class Network implements RemoteSync {
   async deleteSet() { this.guard(); }
   async pushTemplate() { this.guard(); }
   async deleteTemplate() { this.guard(); }
+  async pushGym() { this.guard(); }
+  async pushGymOverride() { this.guard(); }
 }
 
 const profile: ProgProfile = {

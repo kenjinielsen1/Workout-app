@@ -4,7 +4,7 @@ import type { RemoteSync } from './remoteSync';
 import { CONFIG_VERSION } from '../lib/evidenceConfig';
 import type { RemoteSource } from './remoteSource';
 import { seedExercises } from './seedCatalog';
-import type { ExerciseOverride, LoggedSet, OutcomeJson, Profile, Recommendation, Workout, WorkoutTemplate } from './domain';
+import type { ExerciseOverride, LoggedSet, OutcomeJson, Profile, Recommendation, Workout, WorkoutTemplate, Gym, GymExerciseOverride } from './domain';
 
 const dbName = () => `test-${crypto.randomUUID()}`;
 const U = 'user-1';
@@ -28,6 +28,10 @@ class MockRemote implements RemoteSync {
   templates = new Map<string, WorkoutTemplate>();
   async pushTemplate(t: WorkoutTemplate) { this.guard(); this.templates.set(t.id, t); }
   async deleteTemplate(id: string) { this.guard(); this.templates.delete(id); }
+  gyms = new Map<string, Gym>();
+  async pushGym(g: Gym) { this.guard(); this.gyms.set(g.id, g); }
+  gymOverrides = new Map<string, GymExerciseOverride>();
+  async pushGymOverride(o: GymExerciseOverride) { this.guard(); this.gymOverrides.set(`${o.gym_id}::${o.exercise_id}`, o); }
   private guard() { if (this.fail) throw new Error('offline'); this.calls++; }
 }
 
@@ -345,5 +349,65 @@ describe('saved workouts — templates (SAVED_WORKOUTS.md)', () => {
     const size = remote.templates.size;
     await store.flush();
     expect(remote.templates.size).toBe(size);
+  });
+});
+
+describe('multi-gym (MULTI_GYM.md)', () => {
+  it('calibrating a machine at gym B leaves gym A untouched', async () => {
+    const store = new LocalFirstStore({ dbName: dbName() });
+    const a = await store.ensureHomeGym(U);
+    const b = await store.saveGym(U, { name: 'Hotel gym' });
+
+    await store.setGymOverride(a.id, 'cable-row', { weight_increment_lb: 7, weight_stack_min_lb: 21 });
+    await store.setGymOverride(b.id, 'cable-row', { weight_increment_lb: 15, weight_stack_min_lb: 30 });
+
+    // Each building keeps its own measured step — the whole point of rule 1.
+    expect(await store.getGymOverrides(a.id)).toEqual([
+      { gym_id: a.id, exercise_id: 'cable-row', weight_increment_lb: 7, weight_stack_min_lb: 21 },
+    ]);
+    expect(await store.getGymOverrides(b.id)).toEqual([
+      { gym_id: b.id, exercise_id: 'cable-row', weight_increment_lb: 15, weight_stack_min_lb: 30 },
+    ]);
+  });
+
+  it('the home gym migrates legacy per-user calibration and equipment losslessly', async () => {
+    const name = dbName();
+    const store = new LocalFirstStore({ dbName: name });
+    // Pre-gym state: a calibrated machine + the user's equipment settings.
+    await store.upsertProfile(U, { has_micro_plates: false, dumbbell_increment_lb: 10, plate_system: 'metric' });
+    await store.setOverride(U, 'leg-press', { weight_increment_lb: 12, weight_stack_min_lb: 40 });
+
+    const home = await store.ensureHomeGym(U);
+    expect(home.is_home).toBe(true);
+    // Equipment settings carried onto the gym…
+    expect(home).toMatchObject({ has_micro_plates: false, dumbbell_increment_lb: 10, plate_system: 'metric' });
+    // …and the measured machine step is not lost.
+    expect(await store.getGymOverrides(home.id)).toEqual([
+      { gym_id: home.id, exercise_id: 'leg-press', weight_increment_lb: 12, weight_stack_min_lb: 40 },
+    ]);
+    // Idempotent: re-running returns the same home gym, not a second one.
+    expect((await store.ensureHomeGym(U)).id).toBe(home.id);
+    expect((await store.listGyms(U)).filter((g) => g.is_home)).toHaveLength(1);
+  });
+
+  it('a session records which gym it happened at', async () => {
+    const store = new LocalFirstStore({ dbName: dbName() });
+    const b = await store.saveGym(U, { name: 'Hotel gym' });
+    const w = await store.startWorkout(U, undefined, undefined, b.id);
+    await store.logSet({ workout_id: w.id, exercise_id: 'leg-press', set_number: 1, weight_lb: 200, reps: 10, rir: 2, is_warmup: false, failed: false });
+    const sessions = await store.getAllSessions(U);
+    expect(sessions.find((s) => s.exercise_id === 'leg-press')?.gym_id).toBe(b.id);
+  });
+
+  it('deleting a gym preserves its logged sets — history is never orphaned', async () => {
+    const store = new LocalFirstStore({ dbName: dbName() });
+    const b = await store.saveGym(U, { name: 'Hotel gym' });
+    const w = await store.startWorkout(U, undefined, undefined, b.id);
+    await store.logSet({ workout_id: w.id, exercise_id: 'leg-press', set_number: 1, weight_lb: 200, reps: 10, rir: 2, is_warmup: false, failed: false });
+
+    await store.deleteGym(b.id);
+    expect(await store.listGyms(U)).not.toContainEqual(expect.objectContaining({ id: b.id }));
+    const sessions = await store.getAllSessions(U);
+    expect(sessions.find((s) => s.exercise_id === 'leg-press')?.sets).toHaveLength(1); // sets survive
   });
 });

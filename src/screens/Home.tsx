@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { useStore } from '../data/StoreProvider';
-import type { AllSession, CreateExerciseInput, Exercise, ExerciseOverride, Profile, WorkoutTemplate } from '../data/domain';
+import type { AllSession, CreateExerciseInput, Exercise, ExerciseOverride, Profile, WorkoutTemplate, Gym, GymExerciseOverride } from '../data/domain';
 import { deriveInitialTarget, seedTargetFromRepMax, type SessionTarget } from '../lib/target';
 import { exerciseFeatures, recommendTarget, sessionsForExercise } from '../lib/recommend';
 import { isMLConfigured, predict } from '../lib/mlClient';
@@ -43,6 +43,8 @@ import { WeeklySummaryScreen } from '../components/WeeklySummaryScreen';
 import { TemplateManager } from '../components/TemplateManager';
 import { TemplateUpdatePrompt } from '../components/TemplateUpdatePrompt';
 import { lineupFromSession, structuralDiff, type TemplateDiff } from '../lib/workoutTemplates';
+import { GymSwitcher } from '../components/GymSwitcher';
+import { effectiveEquipment, shouldConfirmGym, type GymScope } from '../lib/gyms';
 import type { VolumeLookupContext } from '../components/VolumeLookupDrawer';
 import { buildWeeklySummary, type WeeklySummary } from '../lib/weeklySummary';
 import { collectWeeklySummary } from '../lib/weeklySummaryCollect';
@@ -85,6 +87,12 @@ export function Home() {
   const [templatePrompt, setTemplatePrompt] = useState<{ template: WorkoutTemplate; diff: TemplateDiff; lineup: string[] } | null>(null);
   // Exercise ids in the order they were actually trained this session.
   const sessionOrder = useRef<string[]>([]);
+  // Gyms (MULTI_GYM.md). The home gym is selected by default — no session-start
+  // prompt — and the choice persists until deliberately changed.
+  const [gyms, setGyms] = useState<Gym[]>([]);
+  const gymKey = `po:gym:${userId}`;
+  const [currentGymId, setCurrentGymId] = useState<string | null>(null);
+  const [gymConfirmed, setGymConfirmed] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allSessions, setAllSessions] = useState<AllSession[]>([]);
   const [target, setTarget] = useState<SessionTarget | null>(null);
@@ -120,7 +128,7 @@ export function Home() {
   // Per-user machine increment overrides (INCREMENTS.md), merged onto exercises so
   // every downstream rounding call (recommendation, warm-up, live) is loadable at
   // THIS gym.
-  const [overrides, setOverrides] = useState<Map<string, ExerciseOverride>>(new Map());
+  const [overrides, setOverrides] = useState<Map<string, GymExerciseOverride>>(new Map());
   const resolvedExercises = useMemo(
     () =>
       exercises.map((e) => {
@@ -207,21 +215,28 @@ export function Home() {
       store.listExercises(userId),
       store.getProfile(userId),
       store.listSearchable(userId),
-      store.getOverrides(userId),
-    ]).then(([ex, p, searchable, ovr]) => {
+    ]).then(([ex, p, searchable]) => {
       if (!active) return;
       setExercises(ex);
       setProfile(p);
       setAliasById(new Map(searchable.map((s) => [s.id, s.aliases])));
-      setOverrides(new Map(ovr.map((o) => [o.exercise_id, o])));
       setSelectedId((cur) => cur || ex[0]?.id || '');
       setLoaded(true);
     });
     void store.listTemplates(userId).then((t) => active && setTemplates(t));
+    // MULTI_GYM.md: guarantee a home gym (migrating pre-gym data onto it), then
+    // restore the persisted selection — defaulting to home, never prompting.
+    void store.ensureHomeGym(userId).then(async (home) => {
+      if (!active) return;
+      setGyms(await store.listGyms(userId));
+      let saved: string | null = null;
+      try { saved = localStorage.getItem(gymKey); } catch { /* private mode */ }
+      setCurrentGymId(saved ?? home.id);
+    });
     return () => {
       active = false;
     };
-  }, [store, userId]);
+  }, [store, userId, gymKey]);
 
   // WEEKLY_SUMMARY.md: once data has loaded, generate the just-completed week's
   // summary if it doesn't exist yet (idempotent — keyed by week, never duplicated),
@@ -259,6 +274,51 @@ export function Home() {
     setSummaryOpen(false);
   }, [summaries, userId]);
 
+  // Machine calibration is per-gym: switching buildings loads that gym's steps.
+  useEffect(() => {
+    if (!currentGymId) return;
+    let active = true;
+    void store.getGymOverrides(currentGymId).then((ovr) => {
+      if (active) setOverrides(new Map(ovr.map((o) => [o.exercise_id, o])));
+    });
+    return () => { active = false; };
+  }, [store, currentGymId]);
+
+  const homeGymId = useMemo(() => gyms.find((g) => g.is_home)?.id ?? null, [gyms]);
+  const currentGym = useMemo(() => gyms.find((g) => g.id === currentGymId) ?? null, [gyms, currentGymId]);
+  const gymScope = useMemo<GymScope>(() => ({ gymId: currentGymId, homeGymId }), [currentGymId, homeGymId]);
+
+  /** The profile the ROUNDING layer sees: this gym's plates, dumbbells, and grid
+   *  override the user's (MULTI_GYM.md rule 1). A superset of the user profile, so
+   *  it's safe everywhere the profile is used. */
+  const effectiveProfile = useMemo(
+    () => (profile ? effectiveEquipment(profile, currentGym) : null),
+    [profile, currentGym],
+  );
+
+  const selectGym = useCallback((id: string) => {
+    setCurrentGymId(id);
+    setGymConfirmed(false);
+    try { localStorage.setItem(gymKey, id); } catch { /* private mode — resets next launch */ }
+  }, [gymKey]);
+
+  const addGym = useCallback(async (name: string) => {
+    const g = await store.saveGym(userId, { name });
+    setGyms(await store.listGyms(userId));
+    selectGym(g.id); // adding a gym means you're standing in it
+    void store.flush();
+  }, [store, userId, selectGym]);
+
+  /** The forget-to-switch-back guard: ONE quiet line when a non-home gym has sat
+   *  selected since a session more than N days ago. Never a modal, never at home. */
+  const staleGym = useMemo(() => {
+    if (gymConfirmed || !currentGymId) return false;
+    const lastHere = allSessions
+      .filter((x) => (x.gym_id ?? homeGymId) === currentGymId)
+      .reduce<number | null>((m, x) => Math.max(m ?? 0, Date.parse(x.performed_at)) || m, null);
+    return shouldConfirmGym(currentGymId, homeGymId, lastHere, Date.now());
+  }, [gymConfirmed, currentGymId, homeGymId, allSessions]);
+
   const pickerExercises = useMemo<PickerExercise[]>(
     () =>
       exercises.map((e) => ({
@@ -295,7 +355,7 @@ export function Home() {
       const fresh =
         readinessValue === 0 && !plannedDeload && precomputed
           ? precomputed
-          : recommendTarget(all, ex, index, p, null, p.ml_alpha_cap, readinessValue, plannedDeload);
+          : recommendTarget(all, ex, index, p, null, p.ml_alpha_cap, readinessValue, plannedDeload, gymScope);
       const shown = fresh ?? deriveInitialTarget(all.filter((s) => s.exercise_id === exId), ex, p.goal);
       setTarget(shown);
       // Cold start: no real history → the shown number is a crude equipment default.
@@ -326,18 +386,18 @@ export function Home() {
         const feats = exerciseFeatures(all, ex, index, p);
         void predict(feats, all.length, sessionsForExercise(all, exId)).then((ml) => {
           if (!ml || workoutId.current !== null) return;
-          const refined = recommendTarget(all, ex, index, p, ml, p.ml_alpha_cap, readinessValue, plannedDeload);
+          const refined = recommendTarget(all, ex, index, p, ml, p.ml_alpha_cap, readinessValue, plannedDeload, gymScope);
           if (refined) setTarget(refined);
         });
       }
     },
-    [store, userId, resolvedExercises, index, readinessValue],
+    [store, userId, resolvedExercises, index, readinessValue, gymScope],
   );
 
   // Recompute when the exercise changes (or once everything has loaded).
   useEffect(() => {
-    if (selectedId && profile) void computeTarget(selectedId, profile);
-  }, [selectedId, profile, computeTarget]);
+    if (selectedId && effectiveProfile) void computeTarget(selectedId, effectiveProfile);
+  }, [selectedId, effectiveProfile, computeTarget]);
 
   // The paired (inactive) exercise while alternating — its id, and a display-only
   // target for the pair bar. Computed WITHOUT side effects (no saved recommendation);
@@ -362,7 +422,7 @@ export function Home() {
       const anchor = all.length ? all.reduce((m, s) => (s.performed_at < m ? s.performed_at : m), all[0]!.performed_at) : null;
       const plannedDeload = isPlannedDeloadWeek(anchor, new Date().toISOString(), profile.periodization_enabled);
       const t =
-        recommendTarget(all, ex, index, profile, null, profile.ml_alpha_cap, readinessValue, plannedDeload) ??
+        recommendTarget(all, ex, index, effectiveProfile ?? profile, null, profile.ml_alpha_cap, readinessValue, plannedDeload, gymScope) ??
         deriveInitialTarget(all.filter((s) => s.exercise_id === pairedId), ex, profile.goal);
       if (!cancelled) setPairedTarget(t);
     })();
@@ -380,7 +440,7 @@ export function Home() {
           soreness: checkin?.soreness ?? null,
           energy: checkin?.energy ?? null,
           readiness_score: checkin ? readinessValue : null,
-        });
+        }, currentGymId);
         workoutId.current = w.id;
       }
       setCounter.current += 1;
@@ -417,7 +477,7 @@ export function Home() {
         setIncrementPromptFor(selectedId);
       }
     },
-    [store, userId, selectedId, startTimerIfNeeded, checkin, readinessValue, index, overrides],
+    [store, userId, selectedId, startTimerIfNeeded, checkin, readinessValue, index, overrides, currentGymId],
   );
 
   const [incrementPromptFor, setIncrementPromptFor] = useState<string | null>(null);
@@ -428,11 +488,13 @@ export function Home() {
       if (!exId) return;
       localStorage.setItem(`po:incPrompted:${userId}:${exId}`, '1');
       setIncrementPromptFor(null);
-      await store.setOverride(userId, exId, { weight_increment_lb: increment, weight_stack_min_lb: min });
-      setOverrides((m) => new Map(m).set(exId, { user_id: userId, exercise_id: exId, weight_increment_lb: increment, weight_stack_min_lb: min }));
+      // Calibration belongs to THIS gym — never overwrites another building's step.
+      if (!currentGymId) return;
+      await store.setGymOverride(currentGymId, exId, { weight_increment_lb: increment, weight_stack_min_lb: min });
+      setOverrides((m) => new Map(m).set(exId, { gym_id: currentGymId, exercise_id: exId, weight_increment_lb: increment, weight_stack_min_lb: min }));
       void store.flush();
     },
-    [store, userId, incrementPromptFor],
+    [store, userId, incrementPromptFor, currentGymId],
   );
 
   const skipIncrement = useCallback(() => {
@@ -560,10 +622,10 @@ export function Home() {
     // instant and network-free (OFFLINE_FIRST: today's session is precomputed).
     if (profile && ex) {
       const all = await store.getAllSessions(userId);
-      const next = recommendTarget(all, ex, index, profile, null, profile.ml_alpha_cap);
+      const next = recommendTarget(all, ex, index, effectiveProfile ?? profile, null, profile.ml_alpha_cap, null, false, gymScope);
       if (next) await store.saveNextSession(userId, selectedId, next, profile.goal);
     }
-    if (profile) await computeTarget(selectedId, profile);
+    if (effectiveProfile) await computeTarget(selectedId, effectiveProfile);
 
     // WEEKLY_SUMMARY.md Sunday-evening edge: if this session lands in a week that
     // already has a summary, regenerate it (idempotent) so the readout isn't stale.
@@ -933,6 +995,14 @@ export function Home() {
                 {blockPhase.phase === 'deload' ? 'Deload wk' : blockPhase.phase === 'intensification' ? 'Intensify' : 'Build'} · wk {blockPhase.weekInBlock}
               </span>
             )}
+            <GymSwitcher
+              gyms={gyms}
+              currentId={currentGymId}
+              confirmStale={staleGym}
+              onSelect={selectGym}
+              onAdd={(n) => void addGym(n)}
+              onDismissConfirm={() => setGymConfirmed(true)}
+            />
             <button type="button" onClick={() => setTemplatesOpen(true)} className="font-semibold hover:underline">
               Workouts
             </button>
@@ -1110,7 +1180,7 @@ export function Home() {
             key={selectedId}
             userId={userId}
             exercise={selected}
-            profile={profile}
+            profile={effectiveProfile ?? profile}
             target={target}
             priorBestE1RM={priorBestE1RM}
             history={exerciseHistory}
