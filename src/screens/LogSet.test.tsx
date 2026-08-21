@@ -379,79 +379,41 @@ describe('LogSet — exercise pairing (PAIRING.md)', () => {
   });
 });
 
-// FIXES_ENTRY.md bug 1 — manual entry must pass through the loadability grid.
-describe('LogSet — manual entry snapping (FIXES_ENTRY.md)', () => {
+// The app snaps its own recommendations, but a weight the user TYPES is logged
+// exactly as typed — no grid check, no confirmation, no rounding.
+describe('LogSet — a typed weight is logged exactly as entered', () => {
   beforeEach(() => localStorage.clear());
 
   const machineTarget: SessionTarget = { target_weight_lb: 180, target_reps: 10, target_sets: 3 };
 
-  it('an on-grid entry logs with no interruption', async () => {
+  it('an off-grid weight logs unrounded, with no prompt', async () => {
     const onLogSet = vi.fn();
     const user = userEvent.setup();
     render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={onLogSet} />);
-    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '190' } });
-    await user.click(screen.getByRole('button', { name: 'Log set' }));
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 190 }));
-  });
-
-  it('an off-grid entry names both values and the step', async () => {
-    const onLogSet = vi.fn();
-    const user = userEvent.setup();
-    render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={onLogSet} />);
-    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
-    await user.click(screen.getByRole('button', { name: 'Log set' }));
-
-    const dialog = screen.getByRole('alertdialog', { name: /confirm weight/i });
-    expect(dialog).toHaveTextContent(/187 lb isn.t selectable/);
-    expect(dialog).toHaveTextContent(/10 lb steps/);
-    expect(onLogSet).not.toHaveBeenCalled(); // nothing logged until answered
-  });
-
-  it('"Use" logs the snapped value; "Keep" logs exactly what was typed', async () => {
-    const user = userEvent.setup();
-    const useIt = vi.fn();
-    const r = render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={useIt} />);
-    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
-    await user.click(screen.getByRole('button', { name: 'Log set' }));
-    await user.click(screen.getByRole('button', { name: /use 190 lb/i }));
-    expect(useIt).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 190 }));
-    r.unmount();
-
-    const keepIt = vi.fn();
-    render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={keepIt} />);
-    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
-    await user.click(screen.getByRole('button', { name: 'Log set' }));
-    await user.click(screen.getByRole('button', { name: /keep 187 lb/i }));
-    expect(keepIt).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 187 })); // unchanged
-  });
-
-  it('does not re-ask for the same exercise + weight in the session', async () => {
-    const onLogSet = vi.fn();
-    const user = userEvent.setup();
-    render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onLogSet={onLogSet} />);
-    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
-    await user.click(screen.getByRole('button', { name: 'Log set' }));
-    await user.click(screen.getByRole('button', { name: /keep 187 lb/i }));
-
-    // Same weight again — logs straight through, no second prompt.
+    // 187 is not selectable on a 10 lb stack — log it anyway, untouched.
     fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
     await user.click(screen.getByRole('button', { name: 'Log set' }));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(onLogSet).toHaveBeenCalledTimes(2);
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 187 }));
   });
 
-  it('repeatedly keeping off-grid values surfaces the calibration prompt', async () => {
-    const onRequestCalibration = vi.fn();
+  it('a fractional barbell weight is not snapped to the plate grid either', async () => {
+    const onLogSet = vi.fn();
     const user = userEvent.setup();
-    render(<LogSet userId="u1" exercise={stack} profile={profile} target={machineTarget} onRequestCalibration={onRequestCalibration} />);
-    for (const w of ['187', '193']) {
-      fireEvent.change(screen.getByTestId('weight-input'), { target: { value: w } });
-      await user.click(screen.getByRole('button', { name: 'Log set' }));
-      await user.click(screen.getByRole('button', { name: new RegExp(`keep ${w} lb`, 'i') }));
-    }
-    // Two overrules = our increment is wrong, so ask for the real step.
-    expect(onRequestCalibration).toHaveBeenCalled();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} onLogSet={onLogSet} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '223' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 223 }));
+  });
+
+  it('confirming a big jump still logs the entered value unchanged', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={target} onLogSet={onLogSet} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '2247' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Log it' }));
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 2247 })); // not rounded
   });
 });
 
@@ -518,26 +480,30 @@ describe('LogSet — big-jump needs enough history (FIXES_ENTRY.md)', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(); // still only 2 working sets
   });
 
-  it('loadability and plausibility are independent: a first set can prompt for the grid but never a jump', async () => {
+  it('a first set off-grid is not questioned at all — no grid prompt, no jump prompt', async () => {
+    const onLogSet = vi.fn();
     const user = userEvent.setup();
     const t: SessionTarget = { target_weight_lb: 180, target_reps: 10, target_sets: 3 };
-    render(<LogSet userId="u1" exercise={stack} profile={profile} target={t} />);
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={t} onLogSet={onLogSet} />);
     fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '187' } });
     await user.click(screen.getByRole('button', { name: 'Log set' }));
-    const dialog = screen.getByRole('alertdialog');
-    expect(dialog).toHaveTextContent(/isn.t selectable/);
-    expect(dialog).not.toHaveTextContent(/big jump/i); // no history to judge against
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 187 }));
   });
 
-  it('when both would fire, exactly ONE combined prompt appears', async () => {
+  it('an off-grid big jump asks only about the jump, and logs the value unrounded', async () => {
+    const onLogSet = vi.fn();
     const user = userEvent.setup();
     const t: SessionTarget = { target_weight_lb: 100, target_reps: 10, target_sets: 3 };
-    render(<LogSet userId="u1" exercise={stack} profile={profile} target={t} history={hist(3)} />);
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={t} history={hist(3)} onLogSet={onLogSet} />);
     fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '407' } }); // off-grid AND >2x
     await user.click(screen.getByRole('button', { name: 'Log set' }));
-    expect(screen.getAllByRole('alertdialog')).toHaveLength(1);
-    const dialog = screen.getByRole('alertdialog');
-    expect(dialog).toHaveTextContent(/isn.t selectable/);
-    expect(dialog).toHaveTextContent(/big jump/i);
+    const dialogs = screen.getAllByRole('alertdialog');
+    expect(dialogs).toHaveLength(1); // one question, and only about the jump
+    expect(dialogs[0]!).toHaveTextContent(/big jump/i);
+    expect(dialogs[0]!).not.toHaveTextContent(/selectable/);
+
+    await user.click(within(dialogs[0]!).getByRole('button', { name: 'Log it' }));
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 407 })); // unrounded
   });
 });

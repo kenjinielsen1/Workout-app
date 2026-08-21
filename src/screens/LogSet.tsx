@@ -24,7 +24,7 @@ import { SessionHistory } from '../components/SessionHistory';
 import { PrCelebration } from '../components/PrCelebration';
 import { FirstTimeHint } from '../components/FirstTimeHint';
 import { haptic } from '../lib/haptics';
-import { AnsweredEntries, checkLoadable, isBigJump, isImplausible, RECALIBRATE_AFTER_KEEPS, type LoadabilityResult } from '../lib/entryCheck';
+import { AnsweredEntries, isBigJump, isImplausible } from '../lib/entryCheck';
 import { playCue } from '../lib/sound';
 import { useRestTimer } from '../hooks/useRestTimer';
 
@@ -83,16 +83,6 @@ interface LogSetProps {
   nextUpName?: string;
   onLogSet?: (set: LoggedSet) => void;
   onDeleteSet?: (id: string) => void;
-  /** Repeated "keep" means OUR increment is wrong — surface the existing
-   *  increment-calibration prompt rather than warning again (FIXES_ENTRY.md). */
-  onRequestCalibration?: () => void;
-}
-
-/** A pending confirmation. Loadability and plausibility are INDEPENDENT checks, but
- *  when both fire the user sees ONE combined prompt, never two stacked. */
-interface PendingEntry {
-  loadable: LoadabilityResult | null;
-  jump: boolean;
 }
 
 const newId = (): string =>
@@ -114,7 +104,7 @@ function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfil
   }
 }
 
-export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], nextUpName, onLogSet, onDeleteSet, onRequestCalibration }: LogSetProps) {
+export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], nextUpName, onLogSet, onDeleteSet }: LogSetProps) {
   const unit = profile.weight_unit ?? 'lb';
   const isMetricBar = (profile.plate_system ?? 'imperial') === 'metric' && exercise.equipment === 'barbell';
   const weightStep = equipmentIncrement(exercise, profile);
@@ -128,8 +118,8 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   const [sets, setSets] = useState<LoggedSet[]>([]);
   const [nextNote, setNextNote] = useState<string | null>(null);
   const [prCelebration, setPrCelebration] = useState<{ e1rm: number; prev: number } | null>(null);
-  const [pendingBig, setPendingBig] = useState<(PendingEntry & { set: Omit<LoggedSet, 'set_number' | 'id'> }) | null>(null);
-  // Answered (exercise, weight) pairs — so this fix can't become a repeating prompt.
+  const [pendingBig, setPendingBig] = useState<{ set: Omit<LoggedSet, 'set_number' | 'id'> } | null>(null);
+  // Answered (exercise, weight) pairs — re-entering the same number doesn't re-ask.
   const answered = useRef(new AnsweredEntries());
   // Visible set-logged confirmation — the "it registered" signal on platforms that
   // can't buzz (iOS PWA). `n` retriggers the animation on repeat identical logs.
@@ -259,23 +249,17 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     (!warmup && isBigJump(w, target.target_weight_lb, workingSetCount));
 
   /**
-   * THE input boundary for a manually entered weight (FIXES_ENTRY.md). Every manual
-   * surface routes through here, so loadability is checked in exactly one place.
-   * Returns the pending confirmation, or null to log straight through.
+   * THE input boundary for a manually entered weight. A typed weight is NEVER
+   * altered or questioned for loadability — only genuinely suspicious values pause
+   * for a confirmation. Returns true to hold the set pending, false to log it.
    */
-  const evaluateEntry = (w: number, warmup: boolean): PendingEntry | null => {
-    const alreadyAnswered = answered.current.has(exercise.name, w);
-    const loadable = alreadyAnswered ? null : checkLoadable(w, exercise, profile);
-    const jump = !alreadyAnswered && isAbsurd(w, warmup);
-    if (!loadable && !jump) return null;
-    return { loadable, jump };
-  };
+  const needsConfirm = (w: number, warmup: boolean): boolean =>
+    !answered.current.has(exercise.name, w) && isAbsurd(w, warmup);
 
   const logCurrent = () => {
-    const pending = evaluateEntry(weight, isWarmup);
     const set = { weight_lb: weight, reps, rir, is_warmup: isWarmup, failed: false };
-    if (pending) {
-      setPendingBig({ set, ...pending });
+    if (needsConfirm(weight, isWarmup)) {
+      setPendingBig({ set });
       return;
     }
     commit(set);
@@ -298,9 +282,8 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
 
   const markFailed = () => {
     const set = { weight_lb: weight, reps, rir: 0, is_warmup: isWarmup, failed: true };
-    const pending = evaluateEntry(weight, isWarmup);
-    if (pending) {
-      setPendingBig({ set, ...pending });
+    if (needsConfirm(weight, isWarmup)) {
+      setPendingBig({ set });
       return;
     }
     commit(set);
@@ -504,67 +487,30 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
 
       {pendingBig && (
         <div role="alertdialog" aria-label="Confirm weight" className="flex flex-col gap-3 rounded-2xl border border-amber-500/60 bg-neutral-800 px-4 py-3">
-          {/* ONE prompt even when both checks fire. */}
-          <div className="flex flex-col gap-1 text-sm leading-snug text-neutral-200">
-            {pendingBig.loadable && (
-              <p>
-                <span className="font-semibold tabular-nums">{formatWeightUnit(pendingBig.set.weight_lb, unit)}</span> isn’t selectable on this
-                {' '}{exercise.equipment === 'barbell' ? 'bar' : 'machine'} ({formatWeightUnit(pendingBig.loadable.increment, unit)} steps).
-                Use <span className="font-semibold tabular-nums">{formatWeightUnit(pendingBig.loadable.snapped, unit)}</span>?
-              </p>
-            )}
-            {pendingBig.jump && (
-              <p>
-                That’s a big jump from your target of{' '}
-                <span className="font-semibold tabular-nums">{formatWeightUnit(target.target_weight_lb, unit)}</span>.
-              </p>
-            )}
-          </div>
+          <p className="text-sm leading-snug text-neutral-200">
+            <span className="font-semibold tabular-nums">{formatWeightUnit(pendingBig.set.weight_lb, unit)}</span> is a big jump from your target of{' '}
+            <span className="font-semibold tabular-nums">{formatWeightUnit(target.target_weight_lb, unit)}</span>. Log it?
+          </p>
           <div className="flex gap-2">
-            {pendingBig.loadable && (
-              <button
-                type="button"
-                onClick={() => {
-                  const p = pendingBig;
-                  answered.current.record(exercise.name, p.set.weight_lb, false);
-                  setPendingBig(null);
-                  setWeight(p.loadable!.snapped);
-                  commit({ ...p.set, weight_lb: p.loadable!.snapped });
-                }}
-                className="flex-1 rounded-2xl bg-neutral-100 py-3 font-bold text-neutral-900 active:scale-[0.99]"
-              >
-                Use {formatWeightUnit(pendingBig.loadable.snapped, unit)}
-              </button>
-            )}
             <button
               type="button"
               onClick={() => {
                 const p = pendingBig;
-                // The user is standing in front of the machine — log what they typed.
-                answered.current.record(exercise.name, p.set.weight_lb, !!p.loadable);
+                answered.current.record(exercise.name, p.set.weight_lb);
                 setPendingBig(null);
-                commit(p.set);
-                if (p.loadable && answered.current.keptCount(exercise.name) >= RECALIBRATE_AFTER_KEEPS) {
-                  onRequestCalibration?.(); // our increment is wrong, not their entry
-                }
+                commit(p.set); // logged exactly as entered — never rounded
               }}
-              className={`flex-1 rounded-2xl py-3 font-semibold active:scale-[0.99] ${
-                pendingBig.loadable
-                  ? 'border border-neutral-600 text-neutral-200'
-                  : 'bg-neutral-100 font-bold text-neutral-900'
-              }`}
+              className="flex-1 rounded-2xl bg-neutral-100 py-3 font-bold text-neutral-900 active:scale-[0.99]"
             >
-              {pendingBig.loadable ? `Keep ${formatWeightUnit(pendingBig.set.weight_lb, unit)}` : 'Log it'}
+              Log it
             </button>
-            {!pendingBig.loadable && (
-              <button
-                type="button"
-                onClick={() => setPendingBig(null)}
-                className="flex-1 rounded-2xl border border-neutral-600 py-3 font-semibold text-neutral-200 active:scale-[0.99]"
-              >
-                Go back
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setPendingBig(null)}
+              className="flex-1 rounded-2xl border border-neutral-600 py-3 font-semibold text-neutral-200 active:scale-[0.99]"
+            >
+              Go back
+            </button>
           </div>
         </div>
       )}
