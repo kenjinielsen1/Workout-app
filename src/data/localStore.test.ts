@@ -427,3 +427,23 @@ describe('next-session cache is keyed by GYM too (MULTI_GYM.md)', () => {
     expect(await store.getNextSession(U, 'leg-press', 'hypertrophy', b.id)).toBeNull();
   });
 });
+
+describe('gym attribution survives a server hydrate (MULTI_GYM.md)', () => {
+  it('rowToWorkout keeps gym_id — without it, away sessions silently become home', async () => {
+    const { rowToWorkout } = await import('./mappers');
+    const w = rowToWorkout({
+      id: 'w1', user_id: U, performed_at: '2026-08-01T18:00:00Z', gym_id: 'gym-away',
+      notes: null, session_rpe: 8, sleep_quality: null, soreness: null, energy: null, readiness_score: null,
+    });
+    expect(w.gym_id).toBe('gym-away');
+  });
+
+  it('a legacy row with no gym_id maps to null, not undefined', async () => {
+    const { rowToWorkout } = await import('./mappers');
+    const w = rowToWorkout({
+      id: 'w2', user_id: U, performed_at: '2026-08-01T18:00:00Z',
+      notes: null, session_rpe: null, sleep_quality: null, soreness: null, energy: null, readiness_score: null,
+    });
+    expect(w.gym_id).toBeNull();
+  });
+});

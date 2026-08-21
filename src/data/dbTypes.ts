@@ -35,6 +35,8 @@ export interface WorkoutRow {
   id: string;
   user_id: string;
   performed_at: string;
+  /** MULTI_GYM.md. Must round-trip, or a hydrate re-labels away-gym sessions home. */
+  gym_id?: string | null;
   notes: string | null;
   session_rpe: number | null;
   sleep_quality: number | null;

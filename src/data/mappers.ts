@@ -57,6 +57,9 @@ export function rowToWorkout(r: WorkoutRow): Workout {
     id: r.id,
     user_id: r.user_id,
     performed_at: r.performed_at,
+    // Without this, hydrate() silently strips gym attribution and every away-gym
+    // session reads as home — machine history then looks brand new (MULTI_GYM.md).
+    gym_id: r.gym_id ?? null,
     notes: r.notes,
     session_rpe: r.session_rpe === null ? null : Number(r.session_rpe),
     sleep_quality: r.sleep_quality ?? null,
