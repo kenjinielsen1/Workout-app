@@ -26,6 +26,19 @@ import type { RemoteSource } from './remoteSource';
 
 export const DEMO_LOCAL_USER = 'demo-user';
 
+/** A failure worth retrying: no network, or the server never answered. A rejection
+ *  that carries a Postgres/PostgREST code is the server saying "no" — retrying that
+ *  forever just wedges the queue. */
+function isTransient(err: unknown): boolean {
+  const e = err as { code?: unknown; status?: unknown } | null;
+  if (e && typeof e === 'object') {
+    if (typeof e.code === 'string' && e.code.length > 0) return false; // Postgres/PostgREST rejection
+    const status = typeof e.status === 'number' ? e.status : 0;
+    if (status >= 400 && status < 500) return false; // client error — permanent
+  }
+  return true; // network/unknown — assume it's worth another go
+}
+
 const uuid = (): string =>
   (globalThis.crypto?.randomUUID?.() ?? `id-${Math.random().toString(36).slice(2)}-${Date.now()}`);
 
@@ -44,6 +57,9 @@ export class LocalFirstStore implements WorkoutStore {
   private readonly source: RemoteSource | null;
   private readonly seedDemo: boolean;
   private flushing = false;
+  /** Ops the server permanently rejected this session — skipped so they can't block
+   *  the queue. Kept (not deleted) so the data is never silently thrown away. */
+  private readonly poisoned = new Set<number>();
 
   constructor(opts: LocalStoreOptions = {}) {
     this.remote = opts.remote ?? null;
@@ -501,6 +517,7 @@ export class LocalFirstStore implements WorkoutStore {
     try {
       const ops = await this.db.getAll('sync_queue');
       for (const op of ops) {
+        if (op.seq !== undefined && this.poisoned.has(op.seq)) continue; // already known-bad
         try {
           switch (op.kind) {
             case 'workout': await remote.pushWorkout(op.payload); break;
@@ -518,14 +535,25 @@ export class LocalFirstStore implements WorkoutStore {
           }
           if (op.seq !== undefined) await this.db.delete('sync_queue', op.seq);
           flushed++;
-        } catch {
-          break; // still offline / transient error — keep the rest queued
+        } catch (err) {
+          if (isTransient(err)) break; // offline / server hiccup — retry the rest later
+          // A PERMANENT rejection (constraint, missing column, RLS) will never
+          // succeed on retry. Skipping it stops one poisoned row from holding the
+          // whole queue — and everything behind it, including logged sets —
+          // hostage forever. The op stays queued so nothing is silently lost.
+          this.poisoned.add(op.seq ?? -1);
         }
       }
     } finally {
       this.flushing = false;
     }
     return flushed;
+  }
+
+  /** Ops the server rejected outright this session — sync can't clear these by
+   *  retrying, so the UI should say so rather than implying "just offline". */
+  get blockedSyncCount(): number {
+    return this.poisoned.size;
   }
 
   async pendingSyncCount(): Promise<number> {
@@ -542,15 +570,16 @@ export class LocalFirstStore implements WorkoutStore {
   async hydrate(userId: string, source: RemoteSource | null = this.source): Promise<void> {
     await this.ready;
     if (!source) return;
-    const [{ exercises, aliases }, workouts, sets, recs, profile] = await Promise.all([
+    const [{ exercises, aliases }, workouts, sets, recs, profile, gyms] = await Promise.all([
       source.pullExercises(),
       source.pullWorkouts(userId),
       source.pullSets(userId),
       source.pullRecommendations(userId),
       source.pullProfile(userId),
+      source.pullGyms(userId).catch(() => [] as Gym[]), // pre-0015 servers have no table
     ]);
     const tx = this.db.transaction(
-      ['exercises', 'aliases', 'workouts', 'sets', 'recommendations', 'profiles'],
+      ['exercises', 'aliases', 'workouts', 'sets', 'recommendations', 'profiles', 'gyms'],
       'readwrite',
     );
     for (const e of exercises) void tx.objectStore('exercises').put(e);
@@ -559,6 +588,9 @@ export class LocalFirstStore implements WorkoutStore {
     for (const s of sets) void tx.objectStore('sets').put(s);
     for (const r of recs) void tx.objectStore('recommendations').put(r);
     if (profile) void tx.objectStore('profiles').put(profile);
+    // Adopt the SERVER's gyms. Without this the client invents its own home gym,
+    // and the server's one-home-per-user index rejects it on every flush.
+    for (const g of gyms) void tx.objectStore('gyms').put(g);
     await tx.done;
   }
 }

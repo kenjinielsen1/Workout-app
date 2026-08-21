@@ -1096,7 +1096,7 @@ export function Home() {
         <div className="settle-in flex flex-col gap-2 pt-3">
           {syncStatus.stale && (
             <div className="px-4">
-              <SyncNotice since={syncStatus.since} />
+              <SyncNotice since={syncStatus.since} blocked={syncStatus.blocked} />
             </div>
           )}
           {/* The template's lineup — a quiet nav strip. Tapping switches the active

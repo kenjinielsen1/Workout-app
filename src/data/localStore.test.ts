@@ -250,6 +250,7 @@ class MockSource implements RemoteSource {
   async pullWorkouts() { this.pulls++; return this.workouts; }
   async pullSets() { this.pulls++; return this.sets; }
   async pullRecommendations() { this.pulls++; return [] as Recommendation[]; }
+  async pullGyms(): Promise<Gym[]> { return []; }
   async pullProfile() { this.pulls++; return this.profile; }
 }
 
@@ -445,5 +446,67 @@ describe('gym attribution survives a server hydrate (MULTI_GYM.md)', () => {
       notes: null, session_rpe: null, sleep_quality: null, soreness: null, energy: null, readiness_score: null,
     });
     expect(w.gym_id).toBeNull();
+  });
+});
+
+// One permanently-rejected op used to wedge the whole queue via `break`, so a
+// single bad row held every logged set hostage — indefinitely.
+describe('a poisoned sync op cannot block the queue', () => {
+  class PickyRemote extends MockRemote {
+    /** Simulates a Postgres constraint violation: has a `code`, never succeeds. */
+    override async pushGym(): Promise<void> {
+      const err = new Error('duplicate key value violates unique constraint') as Error & { code: string };
+      err.code = '23505';
+      throw err;
+    }
+  }
+
+  it('skips the rejected op and syncs everything behind it', async () => {
+    const remote = new PickyRemote();
+    const store = new LocalFirstStore({ dbName: dbName(), remote });
+
+    // A gym the server will always reject, then real training data behind it.
+    await store.saveGym(U, { name: 'Duplicate home' });
+    const w = await store.startWorkout(U);
+    await store.logSet({ workout_id: w.id, exercise_id: 'barbell-bench-press', set_number: 1, weight_lb: 185, reps: 5, rir: 2, is_warmup: false, failed: false });
+
+    await store.flush();
+    // The sets got through despite the poisoned gym op ahead of them.
+    expect(remote.workouts.size).toBe(1);
+    expect(remote.sets.size).toBe(1);
+    expect(store.blockedSyncCount).toBe(1); // and we know something is stuck
+  });
+
+  it('a transient failure still stops the run, so nothing is skipped while offline', async () => {
+    const remote = new MockRemote();
+    remote.fail = true; // plain Error, no code → offline
+    const store = new LocalFirstStore({ dbName: dbName(), remote });
+    const w = await store.startWorkout(U);
+    await store.logSet({ workout_id: w.id, exercise_id: 'barbell-bench-press', set_number: 1, weight_lb: 185, reps: 5, rir: 2, is_warmup: false, failed: false });
+
+    expect(await store.flush()).toBe(0);
+    expect(store.blockedSyncCount).toBe(0); // nothing written off as permanent
+
+    remote.fail = false;
+    expect(await store.flush()).toBeGreaterThan(0); // and it all lands on reconnect
+  });
+});
+
+describe('the client adopts the server\'s gyms rather than inventing its own', () => {
+  it('hydrate stores server gyms, so ensureHomeGym finds the existing home', async () => {
+    const serverHome = {
+      id: 'server-home', user_id: U, name: 'Home gym', is_home: true,
+      has_micro_plates: true, dumbbell_increment_lb: 5, plate_system: 'imperial' as const,
+      created_at: '2026-08-01T00:00:00Z',
+    };
+    class SourceWithGyms extends MockSource {
+      override async pullGyms() { return [serverHome]; }
+    }
+    const store = new LocalFirstStore({ dbName: dbName(), source: new SourceWithGyms() });
+    await store.hydrate(U);
+
+    const home = await store.ensureHomeGym(U);
+    expect(home.id).toBe('server-home'); // adopted, not a fresh uuid
+    expect((await store.listGyms(U)).filter((g) => g.is_home)).toHaveLength(1);
   });
 });

@@ -5,7 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildAliasList, rowToExercise, rowToProfile, rowToSet, rowToWorkout } from './mappers';
 import type { AliasRow, ExerciseRow, ProfileRow, SetRow, WorkoutRow } from './dbTypes';
-import type { Exercise, LoggedSet, Profile, Recommendation, Workout } from './domain';
+import type { Exercise, LoggedSet, Profile, Recommendation, Workout, Gym } from './domain';
 
 export interface RemoteSource {
   pullExercises(): Promise<{ exercises: Exercise[]; aliases: Map<string, string[]> }>;
@@ -13,6 +13,9 @@ export interface RemoteSource {
   pullSets(userId: string): Promise<LoggedSet[]>;
   pullRecommendations(userId: string): Promise<Recommendation[]>;
   pullProfile(userId: string): Promise<Profile | null>;
+  /** MULTI_GYM.md — without this the client invents its own home gym and the
+   *  server's "one home per user" index rejects it, wedging the sync queue. */
+  pullGyms(userId: string): Promise<Gym[]>;
 }
 
 /**
@@ -56,6 +59,12 @@ export class SupabaseRemoteSource implements RemoteSource {
     const { data, error } = await this.db.from('recommendations').select('*').eq('user_id', userId);
     if (error) throw error;
     return data as Recommendation[];
+  }
+
+  async pullGyms(userId: string): Promise<Gym[]> {
+    const { data, error } = await this.db.from('gyms').select('*').eq('user_id', userId);
+    if (error) throw error;
+    return (data ?? []) as Gym[];
   }
 
   async pullProfile(userId: string): Promise<Profile | null> {

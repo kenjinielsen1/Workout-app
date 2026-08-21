@@ -11,10 +11,13 @@ export interface SyncStatus {
   stale: boolean;
   /** Human anchor, e.g. "since Tuesday" (null unless stale). */
   since: string | null;
+  /** The server rejected something outright — retrying won't clear it, so don't
+   *  promise it'll "catch up when you're back online". */
+  blocked: boolean;
 }
 
 export function useSyncStatus(store: LocalFirstStore, userId: string): SyncStatus {
-  const [status, setStatus] = useState<SyncStatus>({ stale: false, since: null });
+  const [status, setStatus] = useState<SyncStatus>({ stale: false, since: null, blocked: false });
 
   useEffect(() => {
     if (!store.syncConfigured) return;
@@ -26,7 +29,7 @@ export function useSyncStatus(store: LocalFirstStore, userId: string): SyncStatu
       if (pending === 0) markSyncOk(userId, now); // last time the queue was clean
       const lastOk = readLastSyncOk(userId);
       const stale = isSyncStale(pending, lastOk, now);
-      if (active) setStatus({ stale, since: stale && lastOk ? formatSyncSince(lastOk, now) : null });
+      if (active) setStatus({ stale, since: stale && lastOk ? formatSyncSince(lastOk, now) : null, blocked: store.blockedSyncCount > 0 });
     };
 
     void check();

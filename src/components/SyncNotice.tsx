@@ -4,14 +4,18 @@
 
 interface SyncNoticeProps {
   since: string | null;
+  /** The server rejected something — this won't clear by waiting. */
+  blocked?: boolean;
 }
 
-export function SyncNotice({ since }: SyncNoticeProps) {
+export function SyncNotice({ since, blocked = false }: SyncNoticeProps) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-neutral-700 bg-neutral-800 px-3 py-2 text-xs text-neutral-400">
       <span aria-hidden className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-500" />
       <span>
-        Not synced {since ?? 'in a while'} — your data’s safe on this device and will catch up when you’re back online.
+        {blocked
+          ? `Not synced ${since ?? 'in a while'} — your data’s safe on this device, but the server turned something away. It won’t clear on its own.`
+          : `Not synced ${since ?? 'in a while'} — your data’s safe on this device and will catch up when you’re back online.`}
       </span>
     </div>
   );
