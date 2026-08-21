@@ -233,11 +233,21 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
     }
   };
 
-  // Logged WORKING sets for this lift: prior sessions (already gym-scoped and
-  // warm-up-free upstream) plus this session's. Gates the relative jump check —
-  // below the threshold there's no basis to call anything anomalous.
-  const workingSetCount =
-    history.reduce((n, h) => n + h.sets.length, 0) + sets.filter((s) => !s.is_warmup).length;
+  // Logged WORKING sets for this lift, gating the relative jump check. `history` is
+  // refreshed by the caller after every logged set, so it ALREADY includes this
+  // session — adding the local sets too double-counted them and tripped the
+  // threshold two sets early (the warning appeared on set three of a new movement).
+  const workingSetCount = Math.max(
+    history.reduce((n, h) => n + h.sets.length, 0),
+    sets.filter((s) => !s.is_warmup).length,
+  );
+
+  // Judge a jump against what the user has ACTUALLY been lifting. On a new movement
+  // the target stays at the cold-start default all session, so comparing to it made
+  // every real working weight look like a >2x jump.
+  const lastWorking = sets.filter((s) => !s.is_warmup).at(-1)?.weight_lb;
+  const lastHistorical = [...history].sort((a, b) => a.t - b.t).at(-1)?.sets.at(-1)?.weight_lb;
+  const jumpReference = lastWorking ?? lastHistorical ?? target.target_weight_lb;
 
   // Fat-finger guard (POLISH.md §4 + FIXES_ENTRY.md bug 2): a typo'd 2250 for 225
   // would silently corrupt the e1RM. The RELATIVE check compares against the target
@@ -246,7 +256,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   // intentionally light, so they're exempt from the relative check only.
   const isAbsurd = (w: number, warmup: boolean) =>
     isImplausible(w, exercise.equipment) ||
-    (!warmup && isBigJump(w, target.target_weight_lb, workingSetCount));
+    (!warmup && isBigJump(w, jumpReference, workingSetCount));
 
   /**
    * THE input boundary for a manually entered weight. A typed weight is NEVER

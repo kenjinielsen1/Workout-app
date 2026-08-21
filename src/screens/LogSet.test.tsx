@@ -507,3 +507,65 @@ describe('LogSet — big-jump needs enough history (FIXES_ENTRY.md)', () => {
     expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 407 })); // unrounded
   });
 });
+
+// Reported in real use: the warning appeared on the THIRD set of a new movement.
+describe('LogSet — the jump check counts a session\'s own sets correctly', () => {
+  beforeEach(() => localStorage.clear());
+
+  // Home refreshes `history` after every logged set, so it ALREADY contains the
+  // in-progress session. Counting LogSet's local sets too double-counted them and
+  // tripped the 3-set threshold two sets early.
+  const inProgress = (n: number) => [{
+    date: '2026-08-20T00:00:00Z',
+    t: Date.parse('2026-08-20T00:00:00Z'),
+    sets: Array.from({ length: n }, () => ({ weight_lb: 100, reps: 8, failed: false })),
+    rir: 2,
+    e1rm: 125,
+  }];
+
+  it('no warning on the third set of a brand-new movement', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    // Cold-start target is the empty bar; the user is actually lifting 100.
+    const cold: SessionTarget = { target_weight_lb: 45, target_reps: 8, target_sets: 3 };
+    const view = (n: number) => (
+      <LogSet userId="u1" exercise={barbell} profile={profile} target={cold} history={n ? inProgress(n) : []} onLogSet={onLogSet} />
+    );
+    const { rerender } = render(view(0));
+
+    // Sets 1 and 2, with Home re-feeding history after each log exactly as it does.
+    for (const n of [0, 1]) {
+      fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '100' } });
+      await user.click(screen.getByRole('button', { name: 'Log set' }));
+      rerender(view(n + 1));
+    }
+
+    // The third set: two working sets exist, not four. No warning.
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '100' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onLogSet).toHaveBeenCalledTimes(3);
+  });
+
+  it('once past the threshold, it judges against what you actually lifted — not the cold-start default', async () => {
+    const onLogSet = vi.fn();
+    const user = userEvent.setup();
+    const cold: SessionTarget = { target_weight_lb: 45, target_reps: 8, target_sets: 3 };
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={cold} history={inProgress(3)} onLogSet={onLogSet} />);
+    // Same 100 lb the user has been lifting all session: no warning, despite being
+    // >2x the stale 45 lb cold-start target.
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '100' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onLogSet).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 100 }));
+  });
+
+  it('still catches a real fat-finger once there is history to judge against', async () => {
+    const user = userEvent.setup();
+    const cold: SessionTarget = { target_weight_lb: 100, target_reps: 8, target_sets: 3 };
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={cold} history={inProgress(3)} />);
+    fireEvent.change(screen.getByTestId('weight-input'), { target: { value: '1000' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/big jump/i);
+  });
+});
