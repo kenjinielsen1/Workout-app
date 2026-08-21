@@ -502,6 +502,21 @@ export function Home() {
     [store, userId, incrementPromptFor, currentGymId],
   );
 
+  /** Clear this gym's override so the exercise falls back to the catalog/equipment
+   *  default (MULTI_GYM.md resolution order). */
+  const resetIncrement = useCallback(async () => {
+    const exId = incrementPromptFor;
+    if (!exId || !currentGymId) return;
+    setIncrementPromptFor(null);
+    await store.setGymOverride(currentGymId, exId, { weight_increment_lb: null, weight_stack_min_lb: null });
+    setOverrides((m) => {
+      const next = new Map(m);
+      next.delete(exId);
+      return next;
+    });
+    void store.flush();
+  }, [store, incrementPromptFor, currentGymId]);
+
   const skipIncrement = useCallback(() => {
     if (incrementPromptFor) localStorage.setItem(`po:incPrompted:${userId}:${incrementPromptFor}`, '1');
     setIncrementPromptFor(null);
@@ -1211,6 +1226,7 @@ export function Home() {
             priorBestE1RM={priorBestE1RM}
             history={exerciseHistory}
             nextUpName={pairedName}
+            onEditIncrement={() => setIncrementPromptFor(selectedId)}
             onLogSet={onLogSet}
             onDeleteSet={onDeleteSet}
           />
@@ -1318,7 +1334,9 @@ export function Home() {
       {incrementPromptFor && index.get(incrementPromptFor) && (
         <IncrementPrompt
           exerciseName={index.get(incrementPromptFor)!.name}
-          defaultIncrement={equipmentIncrement(index.get(incrementPromptFor)!, profile ?? { has_micro_plates: false, dumbbell_increment_lb: 5 })}
+          defaultIncrement={equipmentIncrement(index.get(incrementPromptFor)!, effectiveProfile ?? profile ?? { has_micro_plates: false, dumbbell_increment_lb: 5 })}
+          unit={profile?.weight_unit}
+          onReset={overrides.has(incrementPromptFor) ? () => void resetIncrement() : undefined}
           onSave={saveIncrement}
           onSkip={skipIncrement}
         />

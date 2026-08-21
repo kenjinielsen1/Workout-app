@@ -569,3 +569,28 @@ describe('LogSet — the jump check counts a session\'s own sets correctly', () 
     expect(screen.getByRole('alertdialog')).toHaveTextContent(/big jump/i);
   });
 });
+
+describe('LogSet — the increment is always changeable (MULTI_GYM.md)', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('shows the current step and opens calibration on tap', async () => {
+    const onEditIncrement = vi.fn();
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={{ target_weight_lb: 180, target_reps: 10, target_sets: 3 }} onEditIncrement={onEditIncrement} />);
+    const control = screen.getByRole('button', { name: /steps by 10 lb/i });
+    await user.click(control);
+    expect(onEditIncrement).toHaveBeenCalled();
+  });
+
+  it('reflects a calibrated step rather than the equipment default', () => {
+    // The same machine measured at 11 lb (5 kg) at this gym.
+    const calibrated = { ...stack, weight_increment_lb: 11 };
+    render(<LogSet userId="u1" exercise={calibrated} profile={profile} target={{ target_weight_lb: 180, target_reps: 10, target_sets: 3 }} onEditIncrement={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /steps by 11 lb/i })).toBeInTheDocument();
+  });
+
+  it('stays out of the way when no handler is supplied', () => {
+    render(<LogSet userId="u1" exercise={stack} profile={profile} target={{ target_weight_lb: 180, target_reps: 10, target_sets: 3 }} />);
+    expect(screen.queryByRole('button', { name: /steps by/i })).not.toBeInTheDocument();
+  });
+});

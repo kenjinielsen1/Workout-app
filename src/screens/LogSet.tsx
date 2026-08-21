@@ -83,6 +83,9 @@ interface LogSetProps {
   nextUpName?: string;
   onLogSet?: (set: LoggedSet) => void;
   onDeleteSet?: (id: string) => void;
+  /** Open the increment calibration for this lift at the CURRENT gym. Always
+   *  reachable, because the same machine steps differently between gyms. */
+  onEditIncrement?: () => void;
 }
 
 const newId = (): string =>
@@ -104,7 +107,7 @@ function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfil
   }
 }
 
-export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], nextUpName, onLogSet, onDeleteSet }: LogSetProps) {
+export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], nextUpName, onLogSet, onDeleteSet, onEditIncrement }: LogSetProps) {
   const unit = profile.weight_unit ?? 'lb';
   const isMetricBar = (profile.plate_system ?? 'imperial') === 'metric' && exercise.equipment === 'barbell';
   const weightStep = equipmentIncrement(exercise, profile);
@@ -435,6 +438,16 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
         unit={unit}
         data-testid="weight-input"
       />
+
+      {onEditIncrement && (
+        <button
+          type="button"
+          onClick={onEditIncrement}
+          className="-mt-2 self-start text-xs text-neutral-500"
+        >
+          Steps by {formatWeightUnit(weightStep, unit)} · <span className="font-semibold text-neutral-400">Change</span>
+        </button>
+      )}
 
       <PlateChips result={plates} effectiveNote={effectiveNote(weight, exercise, profile, unit)} />
 
