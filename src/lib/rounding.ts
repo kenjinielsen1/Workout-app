@@ -84,6 +84,18 @@ function loadFloor(ex: IncExercise): number {
  * flooring is the only mode that cannot breach a cap. Below the minimum it
  * returns the minimum (the lightest plate/pin), never zero or negative.
  */
+/** What a gym's kit actually steps by in kg, mirroring the lb defaults. Used at a
+ *  metric gym when the machine hasn't been individually calibrated. */
+const METRIC_STEP_KG: Partial<Record<Exercise['equipment'], number>> = {
+  dumbbell: 2.5,
+  kettlebell: 4,
+  machine_plate: 1.25, // plates per side
+  machine_selectorized: 5,
+  cable: 5,
+  bodyweight: 2.5, // added load
+  band: 2.5,
+};
+
 export function snapToLoadable(
   rawLb: number,
   ex: IncExercise,
@@ -100,6 +112,24 @@ export function snapToLoadable(
     // Full precision: the stored lb is the exact kg-grid value; don't round it to
     // the 2.5 grid (that would make it unloadable in kg). It's still just lb.
     return kgToLb(BAR_KG + steps * BARBELL_KG_STEP);
+  }
+
+  // Everything ELSE at a metric gym: dumbbells, stacks and plates there are metric
+  // too, so snapping on the lb grid produced values that display as unloadable
+  // decimals (a 50 lb dumbbell reading 22.68 kg). Snap in kg and store the exact
+  // kg-grid value back in lb — the engine still only ever sees lb (UNITS.md).
+  if (user.plate_system === 'metric') {
+    const stepKg =
+      ex.weight_increment_lb != null && ex.weight_increment_lb > 0
+        ? lbToKg(ex.weight_increment_lb) // a calibrated machine: trust the measured step
+        : METRIC_STEP_KG[ex.equipment] ?? 2.5;
+    const minKg =
+      ex.weight_stack_min_lb != null && ex.weight_stack_min_lb > 0 ? lbToKg(ex.weight_stack_min_lb) : 0;
+    const rawKg = lbToKg(rawLb);
+    if (rawKg <= minKg) return kgToLb(minKg);
+    const q = (rawKg - minKg) / stepKg;
+    const steps = mode === 'floor' ? Math.floor(q) : Math.round(q);
+    return kgToLb(minKg + steps * stepKg);
   }
 
   const inc = equipmentIncrement(ex, user);

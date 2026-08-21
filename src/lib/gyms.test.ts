@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { effectiveEquipment, isGymScopedEquipment, scopeHistoryToGym, shouldConfirmGym, STALE_GYM_DAYS } from './gyms';
 import { equipmentIncrement, snapToLoadable } from './rounding';
+import { kgToLb, lbToKg } from './units';
 import type { Equipment } from './types';
 
 const A = 'gym-a'; // home
@@ -255,5 +256,36 @@ describe('Detail chart, "Last time", and PR baseline are gym-scoped too', () => 
     // A 120 lb pulldown at the away gym isn't judged against the home gym's 200.
     expect(awayBest).toBeLessThan(homeBest);
     expect(awayBest).toBeGreaterThan(0);
+  });
+});
+
+describe('a metric gym gives loadable KG, not decimal conversions of lb', () => {
+  const metric = { has_micro_plates: true, dumbbell_increment_lb: 5, plate_system: 'metric' as const };
+  // Use the library's own conversion so the assertions test behaviour, not my arithmetic.
+  const kg = (lb: number) => lbToKg(lb);
+
+  it('dumbbells land on the 2.5 kg rack, not 22.68 kg', () => {
+    const db = { equipment: 'dumbbell' as const, default_increment_lb: 5, weight_increment_lb: null, weight_stack_min_lb: null };
+    const snapped = kg(snapToLoadable(50, db, metric, 'nearest'));
+    expect(snapped % 2.5).toBeCloseTo(0, 6); // a real dumbbell you can pick up
+  });
+
+  it('a selectorized stack lands on 5 kg steps', () => {
+    const stack = { equipment: 'machine_selectorized' as const, default_increment_lb: 10, weight_increment_lb: null, weight_stack_min_lb: null };
+    const snapped = kg(snapToLoadable(137, stack, metric, 'nearest'));
+    expect(snapped % 5).toBeCloseTo(0, 6);
+  });
+
+  it('a calibrated machine uses ITS measured step, converted to kg', () => {
+    // The user measured this stack at exactly 5 kg (stored as its lb equivalent).
+    const calibrated = { equipment: 'cable' as const, default_increment_lb: 10, weight_increment_lb: kgToLb(5), weight_stack_min_lb: null };
+    const snapped = kg(snapToLoadable(100, calibrated, metric, 'nearest'));
+    expect(snapped % 5).toBeCloseTo(0, 6);
+  });
+
+  it('an imperial gym is completely unaffected', () => {
+    const db = { equipment: 'dumbbell' as const, default_increment_lb: 5, weight_increment_lb: null, weight_stack_min_lb: null };
+    const imperial = { ...metric, plate_system: 'imperial' as const };
+    expect(snapToLoadable(50, db, imperial, 'nearest')).toBe(50);
   });
 });
