@@ -566,3 +566,51 @@ describe('repairing a home gym the client invented (MULTI_GYM.md)', () => {
     expect(gyms.map((g) => g.id).sort()).toEqual([away.id, serverHome.id].sort());
   });
 });
+
+// Reported from the device: gym-override · 42501 (RLS). The override's gym must
+// exist server-side and be yours, so an op pointing at a discarded gym is refused
+// on every flush, forever.
+describe('orphaned gym-override ops cannot wedge the queue', () => {
+  const serverHome = {
+    id: 'server-home', user_id: U, name: 'Home gym', is_home: true,
+    has_micro_plates: true, dumbbell_increment_lb: 5, plate_system: 'imperial' as const,
+    created_at: '2026-08-01T00:00:00Z',
+  };
+  class SourceWithHome extends MockSource {
+    override async pullGyms(): Promise<Gym[]> { return [serverHome]; }
+  }
+
+  it('the repair leaves no override pointing at the discarded gym', async () => {
+    const remote = new MockRemote();
+    const store = new LocalFirstStore({ dbName: dbName(), remote, source: new SourceWithHome() });
+
+    const invented = await store.ensureHomeGym(U);
+    await store.setGymOverride(invented.id, 'cable-row', { weight_increment_lb: 11, weight_stack_min_lb: null });
+
+    await store.hydrate(U);
+    await store.flush();
+
+    // Every override that reached the server names a gym the server actually has.
+    for (const o of remote.gymOverrides.values()) expect(o.gym_id).toBe(serverHome.id);
+    // And the calibration itself survived the move.
+    expect([...remote.gymOverrides.values()]).toContainEqual(
+      expect.objectContaining({ exercise_id: 'cable-row', weight_increment_lb: 11 }),
+    );
+    expect(store.blockedSyncCount).toBe(0); // nothing left stuck
+  });
+
+  it('prunes an override whose gym is gone, without touching valid ones', async () => {
+    const store = new LocalFirstStore({ dbName: dbName(), source: new SourceWithHome() });
+    await store.hydrate(U); // adopt the server's home gym
+    await store.setGymOverride(serverHome.id, 'cable-row', { weight_increment_lb: 5, weight_stack_min_lb: null });
+    await store.setGymOverride('vanished-gym', 'leg-press', { weight_increment_lb: 9, weight_stack_min_lb: null });
+
+    await store.hydrate(U); // the repair runs again
+
+    const remote = new MockRemote();
+    await store.flush(remote);
+    const gymIds = [...remote.gymOverrides.values()].map((o) => o.gym_id);
+    expect(gymIds).toContain(serverHome.id); // the real one still syncs
+    expect(gymIds).not.toContain('vanished-gym'); // the orphan is gone
+  });
+});

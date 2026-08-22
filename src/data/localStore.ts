@@ -533,6 +533,26 @@ export class LocalFirstStore implements WorkoutStore {
   /** Drain the queue to `remote` (or the injected one). Idempotent: an op that
    *  already synced upserts by id. Stops on the first failure, leaving the rest
    *  queued for the next attempt. Returns the number of ops flushed. */
+  /**
+   * Drop queued gym-overrides whose gym this device no longer knows about. Their
+   * RLS with-check can never pass (the gym must exist and be yours), so they would
+   * be refused on every flush forever. Nothing is lost: an override is calibration
+   * for a gym that isn't there any more.
+   */
+  private async pruneOrphanedOverrides(userId: string): Promise<number> {
+    const known = new Set((await this.db.getAllFromIndex('gyms', 'by_user', userId)).map((g) => g.id));
+    if (known.size === 0) return 0; // gyms not loaded yet — don't prune blind
+    let dropped = 0;
+    for (const op of await this.db.getAll('sync_queue')) {
+      if (op.seq === undefined || op.kind !== 'gym-override') continue;
+      if (known.has(op.payload.gym_id)) continue;
+      await this.db.delete('sync_queue', op.seq);
+      this.poisoned.delete(op.seq);
+      dropped++;
+    }
+    return dropped;
+  }
+
   async flush(remote: RemoteSync | null = this.remote): Promise<number> {
     await this.ready;
     // Single-flight: overlapping flushes (e.g. after-write + on-reconnect) would
@@ -644,7 +664,12 @@ export class LocalFirstStore implements WorkoutStore {
 
     const local = await this.db.getAllFromIndex('gyms', 'by_user', userId);
     const invented = local.filter((g) => g.is_home && !serverIds.has(g.id));
-    if (invented.length === 0) return;
+    if (invented.length === 0) {
+      // Even with no duplicate to repair, a previous repair may have left orphaned
+      // calibration ops behind — those are refused by RLS on every flush (42501).
+      if ((await this.pruneOrphanedOverrides(userId)) > 0) this.poisoned.clear();
+      return;
+    }
 
     for (const bad of invented) {
       // 1. Point this device's sessions at the gym the server actually has.
@@ -657,6 +682,11 @@ export class LocalFirstStore implements WorkoutStore {
         if (op.seq === undefined) continue;
         if (op.kind === 'gym' && op.payload.id === bad.id) {
           await this.db.delete('sync_queue', op.seq); // the duplicate itself
+        } else if (op.kind === 'gym-override' && op.payload.gym_id === bad.id) {
+          // Its gym no longer exists anywhere, so the RLS with-check on
+          // gym_exercise_overrides refuses it forever (42501). The calibration is
+          // re-enqueued against the real gym below, so drop the orphan.
+          await this.db.delete('sync_queue', op.seq);
         } else if (op.kind === 'workout' && op.payload.gym_id === bad.id) {
           await this.db.put('sync_queue', { ...op, payload: { ...op.payload, gym_id: serverHome.id } });
         }
@@ -671,6 +701,7 @@ export class LocalFirstStore implements WorkoutStore {
       }
       await this.db.delete('gyms', bad.id);
     }
+    await this.pruneOrphanedOverrides(userId);
     this.poisoned.clear(); // the rejections are repaired — let them retry
   }
 }
