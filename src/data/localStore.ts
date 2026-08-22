@@ -26,6 +26,14 @@ import type { RemoteSource } from './remoteSource';
 
 export const DEMO_LOCAL_USER = 'demo-user';
 
+/** A rejection the server will keep making — surfaced so it can be read, not guessed. */
+export interface SyncFailure {
+  kind: SyncOp['kind'];
+  code: string | null;
+  message: string;
+  details: string | null;
+}
+
 /** A failure worth retrying: no network, or the server never answered. A rejection
  *  that carries a Postgres/PostgREST code is the server saying "no" — retrying that
  *  forever just wedges the queue. */
@@ -60,6 +68,9 @@ export class LocalFirstStore implements WorkoutStore {
   /** Ops the server permanently rejected this session — skipped so they can't block
    *  the queue. Kept (not deleted) so the data is never silently thrown away. */
   private readonly poisoned = new Set<number>();
+  /** What the server actually said, so a stuck queue can be diagnosed from the
+   *  device instead of guessed at from the schema. */
+  private lastError: SyncFailure | null = null;
 
   constructor(opts: LocalStoreOptions = {}) {
     this.remote = opts.remote ?? null;
@@ -542,6 +553,13 @@ export class LocalFirstStore implements WorkoutStore {
           // whole queue — and everything behind it, including logged sets —
           // hostage forever. The op stays queued so nothing is silently lost.
           this.poisoned.add(op.seq ?? -1);
+          const e = err as { code?: string; message?: string; details?: string } | null;
+          this.lastError = {
+            kind: op.kind,
+            code: typeof e?.code === 'string' ? e.code : null,
+            message: (e?.message ?? String(err)).slice(0, 200),
+            details: typeof e?.details === 'string' ? e.details.slice(0, 200) : null,
+          };
         }
       }
     } finally {
@@ -554,6 +572,11 @@ export class LocalFirstStore implements WorkoutStore {
    *  retrying, so the UI should say so rather than implying "just offline". */
   get blockedSyncCount(): number {
     return this.poisoned.size;
+  }
+
+  /** The most recent permanent rejection, verbatim from the server. */
+  get lastSyncError(): SyncFailure | null {
+    return this.lastError;
   }
 
   async pendingSyncCount(): Promise<number> {

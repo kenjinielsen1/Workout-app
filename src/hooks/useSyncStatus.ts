@@ -3,7 +3,7 @@
 // return-to-foreground / reconnect. Only meaningful in Supabase mode.
 
 import { useEffect, useState } from 'react';
-import type { LocalFirstStore } from '../data/localStore';
+import type { LocalFirstStore, SyncFailure } from '../data/localStore';
 import { formatSyncSince, isSyncStale, markSyncOk, readLastSyncOk } from '../lib/syncStatus';
 
 export interface SyncStatus {
@@ -14,10 +14,12 @@ export interface SyncStatus {
   /** The server rejected something outright — retrying won't clear it, so don't
    *  promise it'll "catch up when you're back online". */
   blocked: boolean;
+  /** What the server actually said, for diagnosing from the device. */
+  failure: SyncFailure | null;
 }
 
 export function useSyncStatus(store: LocalFirstStore, userId: string): SyncStatus {
-  const [status, setStatus] = useState<SyncStatus>({ stale: false, since: null, blocked: false });
+  const [status, setStatus] = useState<SyncStatus>({ stale: false, since: null, blocked: false, failure: null });
 
   useEffect(() => {
     if (!store.syncConfigured) return;
@@ -29,7 +31,7 @@ export function useSyncStatus(store: LocalFirstStore, userId: string): SyncStatu
       if (pending === 0) markSyncOk(userId, now); // last time the queue was clean
       const lastOk = readLastSyncOk(userId);
       const stale = isSyncStale(pending, lastOk, now);
-      if (active) setStatus({ stale, since: stale && lastOk ? formatSyncSince(lastOk, now) : null, blocked: store.blockedSyncCount > 0 });
+      if (active) setStatus({ stale, since: stale && lastOk ? formatSyncSince(lastOk, now) : null, blocked: store.blockedSyncCount > 0, failure: store.lastSyncError });
     };
 
     void check();
