@@ -26,12 +26,27 @@ import type { RemoteSource } from './remoteSource';
 
 export const DEMO_LOCAL_USER = 'demo-user';
 
-/** A rejection the server will keep making — surfaced so it can be read, not guessed. */
+/** Why a sync op failed — surfaced so it can be read, not guessed. Recorded for
+ *  transient failures too: a queue that never drains because every write is being
+ *  refused (an expired session, say) looks identical to being offline otherwise. */
 export interface SyncFailure {
   kind: SyncOp['kind'];
   code: string | null;
   message: string;
   details: string | null;
+  /** False when we'll keep retrying — the case that silently never resolves. */
+  permanent: boolean;
+}
+
+function describeFailure(kind: SyncOp['kind'], err: unknown): SyncFailure {
+  const e = err as { code?: unknown; status?: unknown; message?: unknown; details?: unknown } | null;
+  return {
+    kind,
+    code: typeof e?.code === 'string' ? e.code : typeof e?.status === 'number' ? String(e.status) : null,
+    message: String(e?.message ?? err).slice(0, 200),
+    details: typeof e?.details === 'string' ? e.details.slice(0, 200) : null,
+    permanent: !isTransient(err),
+  };
 }
 
 /** A failure worth retrying: no network, or the server never answered. A rejection
@@ -547,19 +562,13 @@ export class LocalFirstStore implements WorkoutStore {
           if (op.seq !== undefined) await this.db.delete('sync_queue', op.seq);
           flushed++;
         } catch (err) {
+          this.lastError = describeFailure(op.kind, err); // record it either way
           if (isTransient(err)) break; // offline / server hiccup — retry the rest later
           // A PERMANENT rejection (constraint, missing column, RLS) will never
           // succeed on retry. Skipping it stops one poisoned row from holding the
           // whole queue — and everything behind it, including logged sets —
           // hostage forever. The op stays queued so nothing is silently lost.
           this.poisoned.add(op.seq ?? -1);
-          const e = err as { code?: string; message?: string; details?: string } | null;
-          this.lastError = {
-            kind: op.kind,
-            code: typeof e?.code === 'string' ? e.code : null,
-            message: (e?.message ?? String(err)).slice(0, 200),
-            details: typeof e?.details === 'string' ? e.details.slice(0, 200) : null,
-          };
         }
       }
     } finally {

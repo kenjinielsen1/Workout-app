@@ -22,7 +22,7 @@ export function SyncNotice({ since, blocked = false, failure = null }: SyncNotic
           : `Not synced ${since ?? 'in a while'} — your data’s safe on this device and will catch up when you’re back online.`}
       </span>
       </div>
-      {blocked && failure && (
+      {failure && (
         <p className="select-all break-words pl-3.5 font-mono text-[10px] leading-snug text-neutral-500">
           {failure.kind}
           {failure.code ? ` · ${failure.code}` : ''}: {failure.message}
