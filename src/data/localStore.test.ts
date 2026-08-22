@@ -510,3 +510,59 @@ describe('the client adopts the server\'s gyms rather than inventing its own', (
     expect((await store.listGyms(U)).filter((g) => g.is_home)).toHaveLength(1);
   });
 });
+
+// The real-world cascade: a client that invented its own home gym before it had
+// seen the server's. The duplicate is rejected forever, every workout logged
+// against it then fails the gyms foreign key, and its sets go down with it.
+describe('repairing a home gym the client invented (MULTI_GYM.md)', () => {
+  const serverHome = {
+    id: 'server-home', user_id: U, name: 'Home gym', is_home: true,
+    has_micro_plates: true, dumbbell_increment_lb: 5, plate_system: 'imperial' as const,
+    created_at: '2026-08-01T00:00:00Z',
+  };
+  class SourceWithHome extends MockSource {
+    override async pullGyms(): Promise<Gym[]> { return [serverHome]; }
+  }
+
+  it('remaps the sessions, fixes the queued payloads, and drops the duplicate', async () => {
+    const remote = new MockRemote();
+    const store = new LocalFirstStore({ dbName: dbName(), remote, source: new SourceWithHome() });
+
+    // Before the server was ever seen: a locally-minted home gym, trained against.
+    const invented = await store.ensureHomeGym(U);
+    expect(invented.id).not.toBe(serverHome.id);
+    await store.setGymOverride(invented.id, 'cable-row', { weight_increment_lb: 11, weight_stack_min_lb: null });
+    const w = await store.startWorkout(U, undefined, undefined, invented.id);
+    await store.logSet({ workout_id: w.id, exercise_id: 'cable-row', set_number: 1, weight_lb: 100, reps: 10, rir: 2, is_warmup: false, failed: false });
+
+    await store.hydrate(U);
+
+    // Exactly one home gym, and it's the server's.
+    const gyms = await store.listGyms(U);
+    expect(gyms.filter((g) => g.is_home).map((g) => g.id)).toEqual([serverHome.id]);
+    // The session moved with it — history is not orphaned.
+    const sessions = await store.getAllSessions(U);
+    expect(sessions.find((x) => x.exercise_id === 'cable-row')?.gym_id).toBe(serverHome.id);
+    // The measured machine step came along too.
+    expect(await store.getGymOverrides(serverHome.id)).toContainEqual(
+      expect.objectContaining({ exercise_id: 'cable-row', weight_increment_lb: 11 }),
+    );
+
+    // And the queue now drains — the workout carries a gym the server really has.
+    await store.flush();
+    expect(remote.workouts.get(w.id)?.gym_id).toBe(serverHome.id);
+    expect(remote.sets.size).toBe(1); // the training data finally lands
+  });
+
+  it('leaves genuine away gyms alone and is safe to re-run', async () => {
+    const store = new LocalFirstStore({ dbName: dbName(), source: new SourceWithHome() });
+    await store.ensureHomeGym(U);
+    const away = await store.saveGym(U, { name: 'Hotel gym' }); // not home — keep it
+
+    await store.hydrate(U);
+    await store.hydrate(U); // idempotent
+
+    const gyms = await store.listGyms(U);
+    expect(gyms.map((g) => g.id).sort()).toEqual([away.id, serverHome.id].sort());
+  });
+});

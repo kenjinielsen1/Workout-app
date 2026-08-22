@@ -592,5 +592,53 @@ export class LocalFirstStore implements WorkoutStore {
     // and the server's one-home-per-user index rejects it on every flush.
     for (const g of gyms) void tx.objectStore('gyms').put(g);
     await tx.done;
+    await this.reconcileInventedGyms(userId, gyms);
+  }
+
+  /**
+   * Repair for a client that minted its own home gym before it had ever seen the
+   * server's (MULTI_GYM.md). That duplicate is rejected by the one-home-per-user
+   * index on every flush, and — worse — every workout logged against it then fails
+   * the gyms foreign key, taking its sets down with it. The result is a queue that
+   * can never drain and training data that never reaches the server.
+   *
+   * Remaps those sessions onto the server's home gym, rewrites the queued payloads
+   * so the retry succeeds, and drops the duplicate. Idempotent and safe to re-run.
+   */
+  private async reconcileInventedGyms(userId: string, serverGyms: Gym[]): Promise<void> {
+    const serverHome = serverGyms.find((g) => g.is_home);
+    if (!serverHome) return; // nothing authoritative to remap onto
+    const serverIds = new Set(serverGyms.map((g) => g.id));
+
+    const local = await this.db.getAllFromIndex('gyms', 'by_user', userId);
+    const invented = local.filter((g) => g.is_home && !serverIds.has(g.id));
+    if (invented.length === 0) return;
+
+    for (const bad of invented) {
+      // 1. Point this device's sessions at the gym the server actually has.
+      const workouts = await this.db.getAllFromIndex('workouts', 'by_user', userId);
+      for (const w of workouts) {
+        if (w.gym_id === bad.id) await this.db.put('workouts', { ...w, gym_id: serverHome.id });
+      }
+      // 2. Fix the queued payloads too, or the retry repeats the same rejection.
+      for (const op of await this.db.getAll('sync_queue')) {
+        if (op.seq === undefined) continue;
+        if (op.kind === 'gym' && op.payload.id === bad.id) {
+          await this.db.delete('sync_queue', op.seq); // the duplicate itself
+        } else if (op.kind === 'workout' && op.payload.gym_id === bad.id) {
+          await this.db.put('sync_queue', { ...op, payload: { ...op.payload, gym_id: serverHome.id } });
+        }
+      }
+      // 3. Carry any calibration done against the invented gym onto the real one.
+      for (const o of await this.db.getAllFromIndex('gym_overrides', 'by_gym', bad.id)) {
+        await this.setGymOverride(serverHome.id, o.exercise_id, {
+          weight_increment_lb: o.weight_increment_lb,
+          weight_stack_min_lb: o.weight_stack_min_lb,
+        });
+        await this.db.delete('gym_overrides', `${bad.id}::${o.exercise_id}`);
+      }
+      await this.db.delete('gyms', bad.id);
+    }
+    this.poisoned.clear(); // the rejections are repaired — let them retry
   }
 }
