@@ -7,7 +7,8 @@
 // suggests rest from the reported effort.
 
 import { equipmentIncrement, snapToLoadable } from './rounding';
-import type { Equipment, LoadType } from './types';
+import { repRangeForGoal } from './progression';
+import type { Equipment, Goal, LoadType } from './types';
 
 export interface LiveExercise {
   equipment: Equipment;
@@ -20,6 +21,9 @@ export interface LiveExercise {
 export interface LiveProfile {
   has_micro_plates: boolean;
   dumbbell_increment_lb: number;
+  /** Drives the rep range for double progression. Absent → the rep target holds,
+   *  which is the pre-existing behaviour. */
+  goal?: Goal;
 }
 export interface LastSet {
   reps: number;
@@ -54,14 +58,20 @@ export function nextSetTarget(params: {
   const { currentWeight, targetReps, last, exercise: ex, profile: user } = params;
   const step = equipmentIncrement(ex, user);
   const rest = restSeconds(ex, last);
+  // Double progression: the rep target moves WITH the load. Going up means starting
+  // the range again from the bottom; backing off means there are reps to chase at
+  // the lighter weight. Holding the weight holds the target.
+  const range = user.goal ? repRangeForGoal(user.goal, ex.is_compound) : null;
 
   // Clearly missed the target (or trained to failure short of it): back off.
   if (last.failed || last.reps < targetReps - 1) {
     return {
       weight_lb: snapToLoadable(currentWeight - step, ex, user, 'floor'),
-      target_reps: targetReps,
+      target_reps: range ? range.max : targetReps,
       rest_seconds: rest,
-      note: 'Backing off one increment to keep the reps clean.',
+      note: range
+        ? `Backing off one increment — chase ${range.max} reps here.`
+        : 'Backing off one increment to keep the reps clean.',
     };
   }
 
@@ -69,9 +79,11 @@ export function nextSetTarget(params: {
   if (last.reps > targetReps && last.rir >= 3) {
     return {
       weight_lb: snapToLoadable(currentWeight + step, ex, user, 'floor'),
-      target_reps: targetReps,
+      target_reps: range ? range.min : targetReps,
       rest_seconds: rest,
-      note: 'That looked easy — up one increment.',
+      note: range
+        ? `That looked easy — up one increment, back to ${range.min} reps.`
+        : 'That looked easy — up one increment.',
     };
   }
 

@@ -16,7 +16,7 @@ import {
   type PlateSystem,
   type WeightUnit,
 } from '../lib/units';
-import type { Equipment, LoadType } from '../lib/types';
+import type { Equipment, Goal, LoadType } from '../lib/types';
 import { NumberStepper } from '../components/NumberStepper';
 import { RirSlider } from '../components/RirSlider';
 import { PlateChips } from '../components/PlateChips';
@@ -42,6 +42,8 @@ export interface LogSetProfile {
   bodyweight_lb: number;
   has_micro_plates: boolean;
   dumbbell_increment_lb: number;
+  /** Drives the rep range, so the rep target can follow the load between sets. */
+  goal?: Goal;
   warmup_enabled?: boolean;
   weight_unit?: WeightUnit;
   plate_system?: PlateSystem;

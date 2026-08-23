@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { repRangeForGoal } from './progression';
 import { formatDuration, formatRest, nextSetTarget, type LiveExercise, type LiveProfile } from './liveProgression';
 
 const barbell: LiveExercise = { equipment: 'barbell', load_type: 'total', default_increment_lb: 5, is_compound: true };
@@ -66,5 +67,44 @@ describe('formatDuration', () => {
     expect(formatDuration(65)).toBe('1:05');
     expect(formatDuration(600)).toBe('10:00');
     expect(formatDuration(3661)).toBe('1:01:01');
+  });
+});
+
+// Double progression, applied within the session: when the load goes up you drop
+// back to the bottom of the rep range; when it comes down you chase the top.
+describe('the rep target follows the load (double progression)', () => {
+  const range = (compound: boolean) => repRangeForGoal('hypertrophy', compound);
+  const ex = { equipment: 'barbell' as const, load_type: 'total' as const, default_increment_lb: 5, is_compound: true };
+  const user = { has_micro_plates: true, dumbbell_increment_lb: 5, goal: 'hypertrophy' as const };
+
+  const at = (last: { reps: number; rir: number; failed?: boolean }, targetReps: number) =>
+    nextSetTarget({ currentWeight: 225, targetReps, last, exercise: ex, profile: user });
+
+  it('adding weight resets the reps to the bottom of the range', () => {
+    const top = range(true).max;
+    const next = at({ reps: top + 1, rir: 3 }, top); // beat it with room to spare
+    expect(next.weight_lb).toBeGreaterThan(225); // load went up…
+    expect(next.target_reps).toBe(range(true).min); // …so reps reset to the bottom
+  });
+
+  it('backing off the weight chases the top of the range', () => {
+    const next = at({ reps: 3, rir: 0, failed: true }, range(true).min);
+    expect(next.weight_lb).toBeLessThan(225); // load came down…
+    expect(next.target_reps).toBe(range(true).max); // …so there are reps to chase
+  });
+
+  it('holding the weight holds the rep target', () => {
+    expect(at({ reps: 10, rir: 2 }, 10).target_reps).toBe(10);
+    expect(at({ reps: 10, rir: 0 }, 10).target_reps).toBe(10); // ground it out
+  });
+
+  it('without a goal it behaves exactly as before — reps never move', () => {
+    const noGoal = { has_micro_plates: true, dumbbell_increment_lb: 5 };
+    const next = nextSetTarget({
+      currentWeight: 225, targetReps: 8,
+      last: { reps: 12, rir: 3 }, exercise: ex, profile: noGoal,
+    });
+    expect(next.weight_lb).toBeGreaterThan(225);
+    expect(next.target_reps).toBe(8); // unchanged
   });
 });

@@ -594,3 +594,35 @@ describe('LogSet — the increment is always changeable (MULTI_GYM.md)', () => {
     expect(screen.queryByRole('button', { name: /steps by/i })).not.toBeInTheDocument();
   });
 });
+
+describe('LogSet — the rep target follows the load between sets', () => {
+  beforeEach(() => localStorage.clear());
+
+  const hypertrophy: LogSetProfile = { ...profile, goal: 'hypertrophy' };
+
+  it('beating the target bumps the weight AND resets the reps to the range bottom', async () => {
+    const user = userEvent.setup();
+    const t: SessionTarget = { target_weight_lb: 225, target_reps: 10, target_sets: 3 };
+    render(<LogSet userId="u1" exercise={barbell} profile={hypertrophy} target={t} priorBestE1RM={9999} />);
+
+    fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '12' } });
+    fireEvent.change(screen.getByRole('slider', { name: /reps in reserve/i }), { target: { value: '3' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+
+    expect(screen.getByTestId('weight-input')).toHaveValue(227.5); // load up
+    expect(screen.getByTestId('reps-input')).toHaveValue(6); // …reps back to the bottom
+    expect(screen.getByText(/back to 6 reps/i)).toBeInTheDocument();
+  });
+
+  it('a miss backs the weight off and gives reps to chase', async () => {
+    const user = userEvent.setup();
+    const t: SessionTarget = { target_weight_lb: 225, target_reps: 6, target_sets: 3 };
+    render(<LogSet userId="u1" exercise={barbell} profile={hypertrophy} target={t} priorBestE1RM={9999} />);
+
+    fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '3' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+
+    expect(screen.getByTestId('weight-input')).toHaveValue(222.5); // load down
+    expect(screen.getByTestId('reps-input')).toHaveValue(10); // …chase the top
+  });
+});
