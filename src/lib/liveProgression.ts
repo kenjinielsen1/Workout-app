@@ -8,6 +8,7 @@
 
 import { equipmentIncrement, snapToLoadable } from './rounding';
 import { repRangeForGoal } from './progression';
+import { reversePyramidSet, type SetScheme } from './setSchemes';
 import type { Equipment, Goal, LoadType } from './types';
 
 export interface LiveExercise {
@@ -54,6 +55,13 @@ export function nextSetTarget(params: {
   last: LastSet;
   exercise: LiveExercise;
   profile: LiveProfile;
+  /** How this lift's sets are laid out. Absent/straight → autoregulate as before. */
+  scheme?: SetScheme;
+  /** The session's TOP set — the engine's number, which the scheme works from. */
+  topWeightLb?: number;
+  topReps?: number;
+  /** 0-based index of the set about to be performed. */
+  setIndex?: number;
 }): NextSet {
   const { currentWeight, targetReps, last, exercise: ex, profile: user } = params;
   const step = equipmentIncrement(ex, user);
@@ -62,6 +70,26 @@ export function nextSetTarget(params: {
   // the range again from the bottom; backing off means there are reps to chase at
   // the lighter weight. Holding the weight holds the target.
   const range = user.goal ? repRangeForGoal(user.goal, ex.is_compound) : null;
+
+  // A chosen scheme owns the shape of the session, so the straight-set
+  // autoregulator below must not fight it — dropping weight and adding reps IS the
+  // plan, not a miss to be corrected.
+  if (params.scheme?.kind === 'reverse_pyramid') {
+    const next = reversePyramidSet({
+      topWeightLb: params.topWeightLb ?? currentWeight,
+      topReps: params.topReps ?? targetReps,
+      setIndex: params.setIndex ?? 1,
+      scheme: params.scheme,
+      exercise: ex,
+      profile: user,
+    });
+    return {
+      weight_lb: next.weight_lb,
+      target_reps: next.target_reps,
+      rest_seconds: rest,
+      note: `Reverse pyramid — drop to ${Math.round(next.weight_lb)} for ${next.target_reps}.`,
+    };
+  }
 
   // Clearly missed the target (or trained to failure short of it): back off.
   if (last.failed || last.reps < targetReps - 1) {

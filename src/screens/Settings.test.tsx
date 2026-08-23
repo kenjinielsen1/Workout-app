@@ -22,6 +22,7 @@ const profile: Profile = {
   plate_system: 'imperial',
   periodization_enabled: true,
   volume_calibration: {},
+  set_schemes: {},
 };
 
 function setup() {

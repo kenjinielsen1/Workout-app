@@ -5,6 +5,7 @@
 import type { Equipment, Goal, LoadType, MovementPattern } from '../lib/types';
 import type { PlateSystem, WeightUnit } from '../lib/units';
 import type { PainType } from '../lib/safety';
+import type { SetScheme } from '../lib/setSchemes';
 
 export interface Exercise {
   id: string;
@@ -113,6 +114,9 @@ export interface Profile {
   /** Per-muscle volume-landmark offset in sets, a delta from the config priors
    *  (audit fix #2). Keyed by fine-grained muscle name. */
   volume_calibration: Record<string, number>;
+  /** Per-exercise set layout (straight, reverse pyramid…), keyed by exercise_id.
+   *  Shapes the session's sets; never sets how heavy the top set is. */
+  set_schemes: Record<string, SetScheme>;
 }
 
 export interface Workout {

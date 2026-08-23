@@ -76,6 +76,7 @@ export interface ProfileRow {
   plate_system: PlateSystem | null;
   periodization_enabled: boolean | null;
   volume_calibration: Record<string, number> | null;
+  set_schemes?: Record<string, import('../lib/setSchemes').SetScheme> | null;
 }
 
 /** Profile defaults for a brand-new user (no row yet, or nullable columns). */
@@ -95,4 +96,5 @@ export const PROFILE_DEFAULTS = {
   plate_system: 'imperial' as PlateSystem,
   periodization_enabled: true,
   volume_calibration: {} as Record<string, number>,
+  set_schemes: {} as Record<string, import('../lib/setSchemes').SetScheme>,
 };

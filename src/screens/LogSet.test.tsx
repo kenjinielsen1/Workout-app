@@ -626,3 +626,53 @@ describe('LogSet — the rep target follows the load between sets', () => {
     expect(screen.getByTestId('reps-input')).toHaveValue(10); // …chase the top
   });
 });
+
+// Reverse pyramid: heavy first, then drop the weight and add reps as sets progress.
+describe('LogSet — reverse pyramid (custom set scheme)', () => {
+  beforeEach(() => localStorage.clear());
+
+  const t: SessionTarget = { target_weight_lb: 225, target_reps: 5, target_sets: 3 };
+  const rpt = { kind: 'reverse_pyramid' as const };
+
+  it('drops the weight and adds reps after the top set', async () => {
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={t} scheme={rpt} priorBestE1RM={9999} />);
+
+    await user.click(screen.getByRole('button', { name: 'Hit target' })); // top set: 225 x 5
+
+    expect(screen.getByTestId('weight-input')).toHaveValue(202.5); // -10%, snapped
+    expect(screen.getByTestId('reps-input')).toHaveValue(7); // +2 reps
+    expect(screen.getByText(/reverse pyramid/i)).toBeInTheDocument();
+  });
+
+  it('keeps descending on the next set rather than autoregulating back up', async () => {
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={t} scheme={rpt} priorBestE1RM={9999} />);
+
+    await user.click(screen.getByRole('button', { name: 'Hit target' }));
+    // An easy second set would normally push the weight UP — the scheme owns it.
+    fireEvent.change(screen.getByRole('slider', { name: /reps in reserve/i }), { target: { value: '3' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+
+    expect(Number((screen.getByTestId('weight-input') as HTMLInputElement).value)).toBeLessThan(202.5);
+    expect(screen.getByTestId('reps-input')).toHaveValue(9); // +2 again
+  });
+
+  it('straight sets are unaffected — autoregulation still applies', async () => {
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={t} priorBestE1RM={9999} />);
+    fireEvent.change(screen.getByTestId('reps-input'), { target: { value: '7' } });
+    fireEvent.change(screen.getByRole('slider', { name: /reps in reserve/i }), { target: { value: '3' } });
+    await user.click(screen.getByRole('button', { name: 'Log set' }));
+    expect(screen.getByTestId('weight-input')).toHaveValue(227.5); // went UP, as before
+  });
+
+  it('toggles the scheme from the Sets control', async () => {
+    const onChangeScheme = vi.fn();
+    const user = userEvent.setup();
+    render(<LogSet userId="u1" exercise={barbell} profile={profile} target={t} onChangeScheme={onChangeScheme} />);
+    expect(screen.getByRole('button', { name: /set scheme/i })).toHaveTextContent(/straight/);
+    await user.click(screen.getByRole('button', { name: /set scheme/i }));
+    expect(onChangeScheme).toHaveBeenCalledWith({ kind: 'reverse_pyramid' });
+  });
+});

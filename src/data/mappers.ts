@@ -45,6 +45,7 @@ export function rowToProfile(r: ProfileRow): Profile {
     plate_system: r.plate_system ?? PROFILE_DEFAULTS.plate_system,
     periodization_enabled: r.periodization_enabled ?? PROFILE_DEFAULTS.periodization_enabled,
     volume_calibration: r.volume_calibration ?? {},
+    set_schemes: r.set_schemes ?? {},
   };
 }
 

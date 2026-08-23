@@ -25,6 +25,7 @@ import { PrCelebration } from '../components/PrCelebration';
 import { FirstTimeHint } from '../components/FirstTimeHint';
 import { haptic } from '../lib/haptics';
 import { AnsweredEntries, isBigJump, isImplausible } from '../lib/entryCheck';
+import { STRAIGHT, type SetScheme } from '../lib/setSchemes';
 import { playCue } from '../lib/sound';
 import { useRestTimer } from '../hooks/useRestTimer';
 
@@ -88,6 +89,9 @@ interface LogSetProps {
   /** Open the increment calibration for this lift at the CURRENT gym. Always
    *  reachable, because the same machine steps differently between gyms. */
   onEditIncrement?: () => void;
+  /** How this lift's sets are laid out (straight, reverse pyramid…). */
+  scheme?: SetScheme;
+  onChangeScheme?: (next: SetScheme) => void;
 }
 
 const newId = (): string =>
@@ -109,7 +113,7 @@ function effectiveNote(weight: number, ex: LogSetExercise, profile: LogSetProfil
   }
 }
 
-export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], nextUpName, onLogSet, onDeleteSet, onEditIncrement }: LogSetProps) {
+export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, history = [], nextUpName, onLogSet, onDeleteSet, onEditIncrement, scheme, onChangeScheme }: LogSetProps) {
   const unit = profile.weight_unit ?? 'lb';
   const isMetricBar = (profile.plate_system ?? 'imperial') === 'metric' && exercise.equipment === 'barbell';
   const weightStep = equipmentIncrement(exercise, profile);
@@ -222,12 +226,19 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
 
     // LIVE within-session autoregulation: advance the next set instantly, locally.
     if (!s.is_warmup) {
+      // The scheme works from the session's TOP set — the engine's number — not
+      // from whatever the last set happened to be.
+      const working = [...sets.filter((x) => !x.is_warmup), { weight_lb: s.weight_lb } as LoggedSet];
       const next = nextSetTarget({
         currentWeight: s.weight_lb,
         targetReps: target.target_reps,
         last: { reps: s.reps, rir: s.rir, failed: s.failed },
         exercise,
         profile,
+        scheme,
+        topWeightLb: working[0]?.weight_lb ?? target.target_weight_lb,
+        topReps: target.target_reps,
+        setIndex: working.length, // the set about to be performed
       });
       setWeight(next.weight_lb);
       setReps(next.target_reps);
@@ -441,15 +452,29 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
         data-testid="weight-input"
       />
 
-      {onEditIncrement && (
-        <button
-          type="button"
-          onClick={onEditIncrement}
-          className="-mt-2 self-start text-xs text-neutral-500"
-        >
-          Steps by {formatWeightUnit(weightStep, unit)} · <span className="font-semibold text-neutral-400">Change</span>
-        </button>
-      )}
+      <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-500">
+        {onEditIncrement && (
+          <button type="button" onClick={onEditIncrement}>
+            Steps by {formatWeightUnit(weightStep, unit)} · <span className="font-semibold text-neutral-400">Change</span>
+          </button>
+        )}
+        {onChangeScheme && (
+          <button
+            type="button"
+            aria-label="Set scheme"
+            onClick={() =>
+              onChangeScheme(
+                scheme?.kind === 'reverse_pyramid' ? STRAIGHT : { kind: 'reverse_pyramid' },
+              )
+            }
+          >
+            Sets:{' '}
+            <span className="font-semibold text-neutral-400">
+              {scheme?.kind === 'reverse_pyramid' ? 'reverse pyramid' : 'straight'}
+            </span>
+          </button>
+        )}
+      </div>
 
       <PlateChips result={plates} effectiveNote={effectiveNote(weight, exercise, profile, unit)} />
 

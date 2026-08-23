@@ -45,6 +45,7 @@ import { TemplateUpdatePrompt } from '../components/TemplateUpdatePrompt';
 import { lineupFromSession, structuralDiff, type TemplateDiff } from '../lib/workoutTemplates';
 import { GymSwitcher } from '../components/GymSwitcher';
 import { effectiveEquipment, scopeHistoryToGym, shouldConfirmGym, type GymScope } from '../lib/gyms';
+import type { SetScheme } from '../lib/setSchemes';
 import type { VolumeLookupContext } from '../components/VolumeLookupDrawer';
 import { buildWeeklySummary, type WeeklySummary } from '../lib/weeklySummary';
 import { collectWeeklySummary } from '../lib/weeklySummaryCollect';
@@ -516,6 +517,21 @@ export function Home() {
     });
     void store.flush();
   }, [store, incrementPromptFor, currentGymId]);
+
+  /** How this lift's sets are laid out. Stored on the profile, so it rides the
+   *  existing sync path — no new table, op, or policy (SAVED_WORKOUTS-style
+   *  restraint: the scheme shapes the sets, the engine still sets the load). */
+  const setScheme = useCallback(
+    async (exerciseId: string, next: SetScheme) => {
+      if (!profile) return;
+      const schemes = { ...(profile.set_schemes ?? {}) };
+      if (next.kind === 'straight') delete schemes[exerciseId];
+      else schemes[exerciseId] = next;
+      setProfile(await store.upsertProfile(userId, { set_schemes: schemes }));
+      void store.flush();
+    },
+    [store, userId, profile],
+  );
 
   const skipIncrement = useCallback(() => {
     if (incrementPromptFor) localStorage.setItem(`po:incPrompted:${userId}:${incrementPromptFor}`, '1');
@@ -1227,6 +1243,8 @@ export function Home() {
             history={exerciseHistory}
             nextUpName={pairedName}
             onEditIncrement={() => setIncrementPromptFor(selectedId)}
+            scheme={profile.set_schemes?.[selectedId]}
+            onChangeScheme={(next) => void setScheme(selectedId, next)}
             onLogSet={onLogSet}
             onDeleteSet={onDeleteSet}
           />
