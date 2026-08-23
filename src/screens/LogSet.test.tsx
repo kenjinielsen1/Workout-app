@@ -667,12 +667,27 @@ describe('LogSet — reverse pyramid (custom set scheme)', () => {
     expect(screen.getByTestId('weight-input')).toHaveValue(227.5); // went UP, as before
   });
 
-  it('toggles the scheme from the Sets control', async () => {
+  it('opens an editor from the Sets control and saves a custom drop', async () => {
     const onChangeScheme = vi.fn();
     const user = userEvent.setup();
     render(<LogSet userId="u1" exercise={barbell} profile={profile} target={t} onChangeScheme={onChangeScheme} />);
     expect(screen.getByRole('button', { name: /set scheme/i })).toHaveTextContent(/straight/);
+
     await user.click(screen.getByRole('button', { name: /set scheme/i }));
-    expect(onChangeScheme).toHaveBeenCalledWith({ kind: 'reverse_pyramid' });
+    const dialog = screen.getByRole('dialog', { name: /set scheme/i });
+    await user.click(within(dialog).getByRole('button', { name: 'Reverse pyramid' }));
+
+    const drop = within(dialog).getByLabelText('Drop per set');
+    await user.clear(drop);
+    await user.type(drop, '10');
+    const reps = within(dialog).getByLabelText('Reps added per set');
+    await user.clear(reps);
+    await user.type(reps, '1');
+
+    // The preview shows the real ladder before committing to it.
+    expect(dialog).toHaveTextContent('225 lb × 5, 215 lb × 6, 205 lb × 7');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(onChangeScheme).toHaveBeenCalledWith({ kind: 'reverse_pyramid', dropLb: 10, repStep: 1 });
   });
 });

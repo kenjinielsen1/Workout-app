@@ -25,7 +25,8 @@ import { PrCelebration } from '../components/PrCelebration';
 import { FirstTimeHint } from '../components/FirstTimeHint';
 import { haptic } from '../lib/haptics';
 import { AnsweredEntries, isBigJump, isImplausible } from '../lib/entryCheck';
-import { STRAIGHT, type SetScheme } from '../lib/setSchemes';
+import { type SetScheme } from '../lib/setSchemes';
+import { SetSchemePrompt } from '../components/SetSchemePrompt';
 import { playCue } from '../lib/sound';
 import { useRestTimer } from '../hooks/useRestTimer';
 
@@ -137,6 +138,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
   const [showHistory, setShowHistory] = useState(false);
   const [warmupsDone, setWarmupsDone] = useState<Set<number>>(new Set());
   const [pain, setPain] = useState<PainType | null>(null);
+  const [schemeOpen, setSchemeOpen] = useState(false);
 
   // Opt-in warm-up ramp up to the working weight (FEATURES.md #1). Logged as
   // is_warmup so they never touch e1RM / progression.
@@ -459,15 +461,7 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
           </button>
         )}
         {onChangeScheme && (
-          <button
-            type="button"
-            aria-label="Set scheme"
-            onClick={() =>
-              onChangeScheme(
-                scheme?.kind === 'reverse_pyramid' ? STRAIGHT : { kind: 'reverse_pyramid' },
-              )
-            }
-          >
+          <button type="button" aria-label="Set scheme" onClick={() => setSchemeOpen(true)}>
             Sets:{' '}
             <span className="font-semibold text-neutral-400">
               {scheme?.kind === 'reverse_pyramid' ? 'reverse pyramid' : 'straight'}
@@ -534,6 +528,20 @@ export function LogSet({ userId, exercise, profile, target, priorBestE1RM = 0, h
           </span>
         )}
       </div>
+
+      {schemeOpen && onChangeScheme && (
+        <SetSchemePrompt
+          exercise={exercise}
+          profile={profile}
+          topWeightLb={target.target_weight_lb}
+          topReps={target.target_reps}
+          sets={target.target_sets}
+          scheme={scheme}
+          unit={unit}
+          onSave={(next) => { onChangeScheme(next); setSchemeOpen(false); }}
+          onClose={() => setSchemeOpen(false)}
+        />
+      )}
 
       {pendingBig && (
         <div role="alertdialog" aria-label="Confirm weight" className="flex flex-col gap-3 rounded-2xl border border-amber-500/60 bg-neutral-800 px-4 py-3">

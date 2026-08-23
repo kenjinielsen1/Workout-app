@@ -60,3 +60,30 @@ describe('reverse pyramid — heavy first, then lighter with more reps', () => {
     expect(text).toMatch(/^225 × 5, [\d.]+ × 7, [\d.]+ × 9$/);
   });
 });
+
+describe('an absolute drop — "take 10 off each set"', () => {
+  const flat: SetScheme = { kind: 'reverse_pyramid', dropLb: 10, repStep: 1 };
+
+  it('drops a flat amount per set, not a percentage', () => {
+    expect(setAt(0, flat).weight_lb).toBe(225);
+    expect(setAt(1, flat).weight_lb).toBe(215);
+    expect(setAt(2, flat).weight_lb).toBe(205);
+    expect(setAt(3, flat).weight_lb).toBe(195);
+  });
+
+  it('adds the chosen reps each set', () => {
+    expect(setAt(1, flat).target_reps).toBe(6); // +1
+    expect(setAt(2, flat).target_reps).toBe(7);
+  });
+
+  it('takes precedence over a percentage if both are set', () => {
+    const both: SetScheme = { kind: 'reverse_pyramid', dropLb: 10, dropPct: 50 };
+    expect(setAt(1, both).weight_lb).toBe(215); // the flat 10, not half
+  });
+
+  it('stays loadable and never goes below the empty bar', () => {
+    const deep = setAt(20, flat); // far more sets than anyone runs
+    expect(deep.weight_lb).toBeGreaterThanOrEqual(45); // the bar itself
+    expect(deep.weight_lb % 2.5).toBe(0);
+  });
+})

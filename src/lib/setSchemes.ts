@@ -16,7 +16,11 @@ export type SetSchemeKind = 'straight' | 'reverse_pyramid';
 
 export interface SetScheme {
   kind: SetSchemeKind;
-  /** Percent to drop per set on a reverse pyramid (10 = −10% each set). */
+  /** Absolute weight to drop per set, in LB (UNITS.md storage). Takes precedence
+   *  over dropPct — most people run a pyramid as "take 10 off", not "take 10% off",
+   *  and an absolute drop is far easier to predict set to set. */
+  dropLb?: number;
+  /** Percent to drop per set instead (10 = −10% each set). */
   dropPct?: number;
   /** Reps added per set as the weight comes down. */
   repStep?: number;
@@ -56,12 +60,16 @@ export function reversePyramidSet(params: {
   profile: SchemeProfile;
 }): { weight_lb: number; target_reps: number } {
   const { topWeightLb, topReps, setIndex, scheme, exercise, profile } = params;
-  const drop = (scheme.dropPct ?? DEFAULT_DROP_PCT) / 100;
   const repStep = scheme.repStep ?? DEFAULT_REP_STEP;
   const n = Math.max(0, Math.floor(setIndex));
 
-  // Compounding drop: each set is `drop` lighter than the one before it.
-  const raw = topWeightLb * Math.pow(1 - drop, n);
+  // Absolute drop wins when set: a flat "10 off each set" is what most people
+  // actually run, and it stays predictable as the top set grows. Otherwise fall
+  // back to a compounding percentage.
+  const raw =
+    scheme.dropLb != null && scheme.dropLb > 0
+      ? topWeightLb - scheme.dropLb * n
+      : topWeightLb * Math.pow(1 - (scheme.dropPct ?? DEFAULT_DROP_PCT) / 100, n);
   return {
     weight_lb: snapToLoadable(raw, exercise, profile, 'nearest'),
     target_reps: Math.max(1, Math.round(topReps + n * repStep)),
