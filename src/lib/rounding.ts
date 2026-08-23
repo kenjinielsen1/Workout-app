@@ -55,6 +55,13 @@ export function equipmentIncrement(ex: IncExercise, user: IncProfile): number {
   if (ex.weight_increment_lb != null && ex.weight_increment_lb > 0) {
     return ex.weight_increment_lb; // real machine step — NOT forced onto 2.5
   }
+  // At a metric gym the increment MUST match the kg grid snapToLoadable rounds to.
+  // Otherwise a step smaller than one rung floors straight back to where it started
+  // and the weight never advances between sets — silently, since the note still
+  // reads "up one increment". Barbells are exempt: they have their own kg branch.
+  if (user.plate_system === 'metric' && ex.equipment !== 'barbell') {
+    return kgToLb(metricStepKg(ex));
+  }
   switch (ex.equipment) {
     case 'barbell':
       // Micro plates give the full 2.5 grid; without them the bar moves in 5s.
@@ -96,6 +103,20 @@ const METRIC_STEP_KG: Partial<Record<Exercise['equipment'], number>> = {
   band: 2.5,
 };
 
+/** The kg rung for this exercise: its measured step if calibrated, else the
+ *  equipment default. Shared by equipmentIncrement and snapToLoadable so the step
+ *  taken and the grid snapped to can never disagree. */
+function metricStepKg(ex: IncExercise): number {
+  return ex.weight_increment_lb != null && ex.weight_increment_lb > 0
+    ? lbToKg(ex.weight_increment_lb)
+    : METRIC_STEP_KG[ex.equipment] ?? 2.5;
+}
+
+/** Floor with a hair of tolerance. A value that is mathematically ON a rung can
+ *  land a few ulps below it after unit conversion, and a naive floor would then
+ *  drop it a FULL step — which is how "up one increment" silently failed to move. */
+const floorSteps = (q: number): number => Math.floor(q + 1e-9);
+
 export function snapToLoadable(
   rawLb: number,
   ex: IncExercise,
@@ -108,7 +129,7 @@ export function snapToLoadable(
     const rawKg = lbToKg(rawLb);
     if (rawKg <= BAR_KG) return kgToLb(BAR_KG); // 20 kg floor (in lb)
     const q = (rawKg - BAR_KG) / BARBELL_KG_STEP;
-    const steps = mode === 'floor' ? Math.floor(q) : Math.round(q);
+    const steps = mode === 'floor' ? floorSteps(q) : Math.round(q);
     // Full precision: the stored lb is the exact kg-grid value; don't round it to
     // the 2.5 grid (that would make it unloadable in kg). It's still just lb.
     return kgToLb(BAR_KG + steps * BARBELL_KG_STEP);
@@ -119,16 +140,13 @@ export function snapToLoadable(
   // decimals (a 50 lb dumbbell reading 22.68 kg). Snap in kg and store the exact
   // kg-grid value back in lb — the engine still only ever sees lb (UNITS.md).
   if (user.plate_system === 'metric') {
-    const stepKg =
-      ex.weight_increment_lb != null && ex.weight_increment_lb > 0
-        ? lbToKg(ex.weight_increment_lb) // a calibrated machine: trust the measured step
-        : METRIC_STEP_KG[ex.equipment] ?? 2.5;
+    const stepKg = metricStepKg(ex); // same rung equipmentIncrement steps by
     const minKg =
       ex.weight_stack_min_lb != null && ex.weight_stack_min_lb > 0 ? lbToKg(ex.weight_stack_min_lb) : 0;
     const rawKg = lbToKg(rawLb);
     if (rawKg <= minKg) return kgToLb(minKg);
     const q = (rawKg - minKg) / stepKg;
-    const steps = mode === 'floor' ? Math.floor(q) : Math.round(q);
+    const steps = mode === 'floor' ? floorSteps(q) : Math.round(q);
     return kgToLb(minKg + steps * stepKg);
   }
 
@@ -136,7 +154,7 @@ export function snapToLoadable(
   const min = loadFloor(ex);
   if (rawLb <= min) return min;
   const q = (rawLb - min) / inc;
-  const steps = mode === 'floor' ? Math.floor(q) : Math.round(q);
+  const steps = mode === 'floor' ? floorSteps(q) : Math.round(q);
   return Number((min + steps * inc).toFixed(4));
 }
 

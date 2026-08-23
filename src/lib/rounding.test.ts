@@ -7,6 +7,7 @@ import {
   round,
   snapToLoadable,
 } from './rounding';
+import { kgToLb, lbToKg } from './units';
 import type { Exercise, Profile } from './types';
 
 const withMicro: Profile = {
@@ -191,5 +192,40 @@ describe('rounding invariant — 10k random model outputs under a safety cap', (
         expect(final).toBeLessThanOrEqual(capped + 1e-9);
       }
     }
+  });
+});
+
+// Reported from real use: at a metric gym, machines and cables never advanced
+// between sets. equipmentIncrement returned a LB step (10 lb ≈ 4.54 kg) while
+// snapToLoadable floored to a 5 kg grid, so the bump landed back on the same rung —
+// silently, since the note still read "up one increment".
+describe('the increment and the metric grid must agree (regression)', () => {
+  const metric = { has_micro_plates: true, dumbbell_increment_lb: 5, plate_system: 'metric' as const };
+  const ex = (equipment: 'cable' | 'machine_selectorized' | 'dumbbell' | 'machine_plate') =>
+    ({ equipment, default_increment_lb: 10, weight_increment_lb: null, weight_stack_min_lb: null });
+
+  it('one increment always clears one grid rung', () => {
+    for (const eq of ['cable', 'machine_selectorized', 'dumbbell', 'machine_plate'] as const) {
+      const e = ex(eq);
+      const step = equipmentIncrement(e, metric);
+      const start = snapToLoadable(100, e, metric, 'floor');
+      const up = snapToLoadable(start + step, e, metric, 'floor');
+      const down = snapToLoadable(start - step, e, metric, 'floor');
+      expect(up, `${eq} did not advance`).toBeGreaterThan(start);
+      expect(down, `${eq} did not back off`).toBeLessThan(start);
+    }
+  });
+
+  it('a calibrated machine steps by its own measured rung', () => {
+    const calibrated = { equipment: 'cable' as const, default_increment_lb: 10, weight_increment_lb: kgToLb(2.5), weight_stack_min_lb: null };
+    const start = snapToLoadable(100, calibrated, metric, 'floor');
+    const up = snapToLoadable(start + equipmentIncrement(calibrated, metric), calibrated, metric, 'floor');
+    expect(lbToKg(up) - lbToKg(start)).toBeCloseTo(2.5, 6);
+  });
+
+  it('an imperial gym is unchanged', () => {
+    const imperial = { ...metric, plate_system: 'imperial' as const };
+    expect(equipmentIncrement(ex('cable'), imperial)).toBe(10);
+    expect(equipmentIncrement(ex('dumbbell'), imperial)).toBe(5);
   });
 });
