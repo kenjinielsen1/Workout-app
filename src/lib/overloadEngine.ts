@@ -189,8 +189,13 @@ export function recommend(
   const baseConfidence = isColdStart ? COLD_START_CONFIDENCE : RULE_CONFIDENCE;
   const step = loadStep(ex, user);
 
-  const hitAll = ws.every((s) => !s.failed && s.reps >= lastTarget);
-  const missedCount = ws.filter((s) => s.failed || s.reps < lastTarget).length;
+  // Judge against the goal's RANGE, not the raw reconstructed target. target_reps
+  // comes from the PRIOR session's top set, so one high-rep day leaves a target
+  // above the range — and then hitting the range top reads as a miss on every set,
+  // which deloaded a lifter for doing exactly what the range asks.
+  const judgeReps = Math.min(lastTarget, range.max);
+  const hitAll = ws.every((s) => !s.failed && s.reps >= judgeReps);
+  const missedCount = ws.filter((s) => s.failed || s.reps < judgeReps).length;
   const topRir = top.rir ?? null;
   const label = ex.name ? `${ex.name}: ` : '';
 

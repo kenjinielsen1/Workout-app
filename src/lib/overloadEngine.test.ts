@@ -351,3 +351,31 @@ describe('guards', () => {
     expect(() => recommend(squat, strength, [s])).toThrow();
   });
 });
+
+// The same drift the live layer had: target_reps is reconstructed from the PRIOR
+// session's top reps, so a high-rep session leaves a target above the goal's range.
+// Judging against that raw number makes range-topping sets read as misses.
+describe('a session is judged against the goal RANGE, not a drifted target', () => {
+  const hypertrophy: EngineProfile = { ...strength, goal: 'hypertrophy' };
+  const range = repRange('hypertrophy', true);
+
+  it('hitting the range top is not a miss, even when the target drifted above it', () => {
+    // Last time they managed 12 reps, so the reconstructed target is 12 — above the
+    // range top. This session they hit the range top on every set.
+    const r = recommend(bench, hypertrophy, [session(190, range.max, 2, range.max + 2)]);
+    expect(r.action).not.toBe('deload_missed');
+    expect(r.target_weight_lb).toBeGreaterThanOrEqual(190); // not cut
+  });
+
+  it('and can still EARN an increase at the range top', () => {
+    const r = recommend(bench, hypertrophy, [session(190, range.max, 3, range.max + 2)]);
+    expect(r.action).toBe('increase_load');
+    expect(r.target_weight_lb).toBeGreaterThan(190);
+  });
+
+  it('a genuine miss well under the range still deloads', () => {
+    const r = recommend(bench, hypertrophy, [session(190, range.min - 2, 0, range.max)]);
+    expect(r.action).toBe('deload_missed');
+    expect(r.target_weight_lb).toBeLessThan(190);
+  });
+})
