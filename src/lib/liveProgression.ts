@@ -70,6 +70,11 @@ export function nextSetTarget(params: {
   // the range again from the bottom; backing off means there are reps to chase at
   // the lighter weight. Holding the weight holds the target.
   const range = user.goal ? repRangeForGoal(user.goal, ex.is_compound) : null;
+  // Judge the set against the GOAL'S RANGE, not the session target alone. That
+  // target can drift above the range — the cold-start fallback repeats last
+  // session's reps verbatim — and a stale high number turned a perfectly good set
+  // into a "miss", dropping the weight on someone who had just beaten the range.
+  const judgeAgainst = range ? Math.min(targetReps, range.max) : targetReps;
 
   // A chosen scheme owns the shape of the session, so the straight-set
   // autoregulator below must not fight it — dropping weight and adding reps IS the
@@ -92,19 +97,22 @@ export function nextSetTarget(params: {
   }
 
   // Clearly missed the target (or trained to failure short of it): back off.
-  if (last.failed || last.reps < targetReps - 1) {
+  if (last.failed || last.reps < judgeAgainst - 1) {
+    // Going lighter must never mean going for FEWER reps than were just performed —
+    // that reads as a demotion for a set that actually went fine.
+    const backedOffReps = Math.max(range ? range.max : targetReps, last.reps);
     return {
       weight_lb: snapToLoadable(currentWeight - step, ex, user, 'floor'),
-      target_reps: range ? range.max : targetReps,
+      target_reps: backedOffReps,
       rest_seconds: rest,
       note: range
-        ? `Backing off one increment — chase ${range.max} reps here.`
+        ? `Backing off one increment — chase ${backedOffReps} reps here.`
         : 'Backing off one increment to keep the reps clean.',
     };
   }
 
   // Beat the target with reps to spare: nudge up for the next set.
-  if (last.reps > targetReps && last.rir >= 3) {
+  if (last.reps > judgeAgainst && last.rir >= 3) {
     return {
       weight_lb: snapToLoadable(currentWeight + step, ex, user, 'floor'),
       target_reps: range ? range.min : targetReps,

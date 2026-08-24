@@ -108,3 +108,42 @@ describe('the rep target follows the load (double progression)', () => {
     expect(next.target_reps).toBe(8); // unchanged
   });
 });
+
+// Reported: a 190 x 12 pulldown was called a miss and dropped to 175 x 10 —
+// lighter AND fewer reps than just performed. Two causes: the session's rep target
+// had drifted above the goal's range (the cold-start fallback repeats last
+// session's reps verbatim), and the back-off then prescribed the range top.
+describe('a set is judged against the goal RANGE, not a drifted target', () => {
+  const ex = { equipment: 'cable' as const, load_type: 'total' as const, default_increment_lb: 10, is_compound: true };
+  const user = { has_micro_plates: true, dumbbell_increment_lb: 5, goal: 'hypertrophy' as const };
+  const range = repRangeForGoal('hypertrophy', true);
+
+  const call = (targetReps: number, reps: number, rir = 2) =>
+    nextSetTarget({ currentWeight: 190, targetReps, last: { reps, rir }, exercise: ex, profile: user });
+
+  it('beating the range top is never a miss, even if the target drifted above it', () => {
+    const next = call(15, 12); // stale target of 15; 12 reps is above range.max
+    expect(next.note).not.toMatch(/backing off/i);
+    expect(next.weight_lb).toBeGreaterThanOrEqual(190); // certainly not dropped
+  });
+
+  it('backing off never asks for FEWER reps than were just performed', () => {
+    const next = nextSetTarget({
+      currentWeight: 190, targetReps: 15,
+      last: { reps: 12, rir: 0, failed: true }, // a genuine failure at 12 reps
+      exercise: ex, profile: user,
+    });
+    expect(next.weight_lb).toBeLessThan(190); // lighter…
+    expect(next.target_reps).toBeGreaterThanOrEqual(12); // …so at least as many reps
+  });
+
+  it('a real miss well under the range still backs off', () => {
+    const next = call(range.max, range.min - 3);
+    expect(next.note).toMatch(/backing off/i);
+    expect(next.weight_lb).toBeLessThan(190);
+  });
+
+  it('still holds when the set lands in range', () => {
+    expect(call(range.max, range.max).note).toMatch(/on track/i);
+  });
+});
