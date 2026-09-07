@@ -289,12 +289,16 @@ describe('synthetic progressions', () => {
     expect(trace[trace.length - 1]!.weight).toBe(BAR_WEIGHT_LB);
   });
 
-  it('plateau: grinding at the top of the rep range (rir 1) triggers a reset deload', () => {
-    // At the rep cap (5) with rir 1: can't add load (rir<2) or reps (at cap), so
-    // the engine repeats until 3 flat sessions accumulate -> deload_plateau.
+  it('completing the rep cap at rir 1 adds load — it is not a plateau', () => {
+    // This previously repeated until three flat sessions accumulated and then
+    // deloaded: at the cap you could neither add reps (already there) nor add load
+    // (rir < 2). Reported in real use as "it tells me to keep the same reps, then
+    // says plateau". Finishing the top of the range IS the earned load increase in
+    // double progression, so the dead zone is gone. Genuine plateaus — flat e1RM
+    // without completing the range — still deload; see the deload_plateau block.
     const trace = simulate(squat, strength, session(225, 5, 1, 5), 5, 1, (t) => t);
-    expect(trace.slice(0, 2).every((t) => t.action === 'repeat')).toBe(true);
-    expect(trace.some((t) => t.action === 'deload_plateau')).toBe(true);
+    expect(trace[0]!.action).toBe('increase_load');
+    expect(trace.some((t) => t.action === 'deload_plateau')).toBe(false);
   });
 });
 
@@ -377,5 +381,39 @@ describe('a session is judged against the goal RANGE, not a drifted target', () 
     const r = recommend(bench, hypertrophy, [session(190, range.min - 2, 0, range.max)]);
     expect(r.action).toBe('deload_missed');
     expect(r.target_weight_lb).toBeLessThan(190);
+  });
+})
+
+// Reported: "it tells me to keep at 12 reps, then says plateau detected, or goes to
+// 16 reps rather than adding weight." Completing the top of the range IS the earned
+// load increase in double progression — grinding it out does not disqualify it.
+describe('finishing the rep range converts to load, however hard it felt', () => {
+  const hypertrophy: EngineProfile = { ...strength, goal: 'hypertrophy' };
+  const iso = repRange('hypertrophy', false); // [8, 15]
+
+  it('at the top of the range with no RIR to spare, it adds weight instead of stalling', () => {
+    // Every set completed at the range top, but it was a grind (rir 1).
+    const r = recommend(dbCurl, hypertrophy, [session(50, iso.max, 1, iso.max)]);
+    expect(r.action).toBe('increase_load');
+    expect(r.target_weight_lb).toBeGreaterThan(50);
+    expect(r.target_reps).toBe(iso.min); // and the range restarts from the bottom
+  });
+
+  it('the same at a dead stop (0 RIR) — the range was still completed', () => {
+    const r = recommend(dbCurl, hypertrophy, [session(50, iso.max, 0, iso.max)]);
+    expect(r.action).toBe('increase_load');
+  });
+
+  it('below the range top it still climbs reps first, as double progression should', () => {
+    const r = recommend(dbCurl, hypertrophy, [session(50, iso.min, 1, iso.min)]);
+    expect(r.action).toBe('add_rep');
+    expect(r.target_reps).toBe(iso.min + 1);
+    expect(r.target_weight_lb).toBe(50); // weight held
+  });
+
+  it('a rep target already past the range top converts to load, never climbs further', () => {
+    const r = recommend(dbCurl, hypertrophy, [session(50, iso.max + 1, 1, iso.max + 1)]);
+    expect(r.action).toBe('increase_load');
+    expect(r.target_reps).toBeLessThanOrEqual(iso.max);
   });
 })

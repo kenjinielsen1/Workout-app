@@ -258,7 +258,12 @@ export function recommend(
 
   // 3) Hit everything with reps to spare → add load, reps unchanged (reset to the
   //    bottom of the range if we were already at the top).
-  if (hitAll && topRir !== null && topRir >= RIR_EASY) {
+  // Double progression: completing the TOP of the rep range is itself the earned
+  // load increase — grinding the last set out does not disqualify it. Without the
+  // range clause there is a dead zone at range.max with RIR 0-1, where "add a rep"
+  // is barred (already at the top) and "add load" is barred (not easy enough), so
+  // the lift repeats until the plateau detector fires.
+  if (hitAll && topRir !== null && (topRir >= RIR_EASY || lastTarget >= range.max)) {
     const w = increasedWeight();
     const nextReps = lastTarget >= range.max ? range.min : lastTarget;
     const cur = sessionBestE1RM(last, ex, user)!;
