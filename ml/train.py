@@ -150,6 +150,21 @@ def main() -> None:
     print(f"source={source} model={args.model} n={len(X)}")
     print(f"holdout MAE: {mae:.2f} lb   (naive roll3 baseline: {naive:.2f} lb)")
 
+    # A model that cannot beat "predict the last rolling e1RM" is worse than doing
+    # nothing, and shipping it would actively degrade recommendations. Keep whatever
+    # is already deployed instead — the app blends ML with the rule engine, so the
+    # existing model staying put is always a safe outcome.
+    if mae >= naive:
+        print(
+            f"NOT SHIPPING: holdout MAE {mae:.2f} lb does not beat the naive "
+            f"baseline {naive:.2f} lb. Keeping the current model."
+        )
+        print(
+            "This is usually just too little data — the table had "
+            f"{len(X)} rows. It should improve as more sessions are logged."
+        )
+        return
+
     import joblib
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
