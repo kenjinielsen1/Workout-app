@@ -34,6 +34,15 @@ export function seedExercises(): { exercises: Exercise[]; aliases: Map<string, s
  * A plausible 10-session progression so a fresh demo isn't empty. Deterministic
  * ids so re-seeding upserts rather than duplicating (idempotent bootstrap).
  */
+/** Demo sessions are dated RELATIVE to now, ending a few days ago. Hard-coded
+ *  dates rot: months later the demo user looks like they took a long layoff, the
+ *  engine applies a detraining adjustment, and the "demo" stops showing normal
+ *  progression at all. */
+function demoSessionDate(total: number, i: number): string {
+  const DAY = 86_400_000;
+  return new Date(Date.now() - (total - i) * 4 * DAY).toISOString();
+}
+
 export function demoHistory(
   userId: string,
   exerciseId = 'barbell-back-squat',
@@ -49,7 +58,7 @@ export function demoHistory(
     workouts.push({
       id: wid,
       user_id: userId,
-      performed_at: new Date(Date.UTC(2026, 3, 1 + i * 4)).toISOString(),
+      performed_at: demoSessionDate(weeks.length, i),
       notes: null,
       session_rpe: 7,
       sleep_quality: null,

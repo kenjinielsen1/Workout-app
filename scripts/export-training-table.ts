@@ -39,7 +39,22 @@ async function main() {
     db.from('sets').select('*'),
     db.from('user_profile').select('*'),
   ]);
-  for (const r of [ex, wk, st, pr]) if (r.error) throw r.error;
+  // Name the cause plainly. A retrain that just says "exit code 1" tells whoever
+  // reads the weekly failure email nothing at all.
+  for (const [name, r] of [['exercises', ex], ['workouts', wk], ['sets', st], ['user_profile', pr]] as const) {
+    if (!r.error) continue;
+    const e = r.error as { code?: string; message?: string; hint?: string };
+    const auth = e.code === 'PGRST301' || /jwt|api key|unauthor/i.test(e.message ?? '');
+    console.error(`Reading "${name}" failed${e.code ? ` (${e.code})` : ''}: ${e.message ?? r.error}`);
+    if (auth) {
+      console.error(
+        'This looks like an auth failure. If the Supabase project moved to the new\n' +
+        'API keys, the legacy service_role JWT is disabled — create a secret key\n' +
+        '(sb_secret_…) and update the SUPABASE_SERVICE_ROLE_KEY repo secret.',
+      );
+    }
+    process.exit(1);
+  }
 
   const index = new Map<string, FeatureExercise>(
     (ex.data as ExerciseRow[]).map(rowToExercise).map((e) => [e.id, e]),
