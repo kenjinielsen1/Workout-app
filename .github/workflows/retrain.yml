@@ -7,8 +7,8 @@ jobs:
   retrain:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - id: export
@@ -17,7 +17,8 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           npx tsx scripts/export-training-table.ts ml/training_table.json
-          echo "rows=$(node -e "console.log(require('./ml/training_table.json').length)")" >> "$GITHUB_OUTPUT"
+                   rows=$(node -e "try{console.log(require('./ml/training_table.json').length)}catch{console.log(0)}")
+          echo "rows=${rows:-0}" >> "$GITHUB_OUTPUT"
       - if: ${{ fromJSON(steps.export.outputs.rows) < 30 }}
         run: echo "Only ${{ steps.export.outputs.rows }} rows — keeping the current model."
       - uses: actions/setup-python@v5
