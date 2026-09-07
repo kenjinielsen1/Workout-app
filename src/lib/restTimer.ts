@@ -37,6 +37,30 @@ export function remainingSec(state: Pick<RestState, 'endsAt'>, now: number): num
   return Math.ceil(remainingMs(state, now) / 1000);
 }
 
+/** How late a "rest complete" alert may still be useful. Past this the rest is
+ *  history, not a cue — announcing it would be an alert at a random time. */
+export const NOTIFY_GRACE_MS = 5 * 60_000;
+
+/** Beyond this a finished rest shouldn't linger in the UI either. */
+export const STALE_REST_MS = 60 * 60_000;
+
+/**
+ * Whether this rest still warrants a "rest complete" alert.
+ *
+ * The naive test — expired and not yet notified — fires on the next app launch for
+ * a rest that was still running when the app was closed. That launch can be days
+ * later, which is exactly how a rest-timer alert arrives out of nowhere.
+ */
+export function shouldNotifyRest(state: Pick<RestState, 'endsAt' | 'notified'>, now: number): boolean {
+  if (state.notified || !isExpired(state, now)) return false;
+  return now - state.endsAt <= NOTIFY_GRACE_MS;
+}
+
+/** A finished rest old enough that it should simply be forgotten. */
+export function isStaleRest(state: Pick<RestState, 'endsAt'>, now: number): boolean {
+  return now - state.endsAt > STALE_REST_MS;
+}
+
 /** True once the rest has fully elapsed. */
 export function isExpired(state: Pick<RestState, 'endsAt'>, now: number): boolean {
   return now >= state.endsAt;

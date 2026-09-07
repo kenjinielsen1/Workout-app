@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   clearRest,
   isExpired,
+  isStaleRest,
   loadRest,
   persistRest,
   remainingMs,
   remainingSec,
   restKey,
+  shouldNotifyRest,
   startRest,
 } from './restTimer';
 
@@ -85,5 +87,32 @@ describe('wall-clock rest timer', () => {
     expect(loadRest('bad', store)).toBeNull();
     store.setItem(restKey('bad2'), JSON.stringify({ durationSec: 5 })); // no endsAt
     expect(loadRest('bad2', store)).toBeNull();
+  });
+});
+
+// Reported: a "rest complete" alert arriving at random times. If the app is closed
+// while a rest is running, `notified` never gets set — so the next launch, whenever
+// that is, sees an expired un-notified rest and fires it on the spot.
+describe('a long-dead rest must not announce itself later', () => {
+  const now = Date.parse('2026-09-07T18:00:00Z');
+  const rest = (endsAt: number, notified = false) => ({ endsAt, durationSec: 120, notified });
+
+  it('still notifies for a rest that just ended', () => {
+    expect(shouldNotifyRest(rest(now - 1_000), now)).toBe(true);
+  });
+
+  it('does NOT notify for one that ended long ago', () => {
+    expect(shouldNotifyRest(rest(now - 6 * 60_000), now)).toBe(false); // past the grace
+    expect(shouldNotifyRest(rest(now - 3 * 86_400_000), now)).toBe(false); // days later
+  });
+
+  it('never notifies twice, or before the rest is up', () => {
+    expect(shouldNotifyRest(rest(now - 1_000, true), now)).toBe(false);
+    expect(shouldNotifyRest(rest(now + 30_000), now)).toBe(false);
+  });
+
+  it('flags an ancient rest as stale so it does not linger in the UI', () => {
+    expect(isStaleRest(rest(now - 3 * 86_400_000), now)).toBe(true);
+    expect(isStaleRest(rest(now - 30_000), now)).toBe(false); // a normal finished rest
   });
 });

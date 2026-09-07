@@ -9,6 +9,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   clearRest,
   isExpired,
+  isStaleRest,
+  shouldNotifyRest,
   loadRest,
   persistRest,
   remainingSec,
@@ -47,8 +49,19 @@ export interface UseRestTimer {
   dismiss: () => void;
 }
 
+/** Load a persisted rest, forgetting one left over from a previous session — it
+ *  shouldn't greet you as "rest done" days later. */
+function loadLiveRest(userId: string): RestState | null {
+  const s = loadRest(userId);
+  if (s && isStaleRest(s, Date.now())) {
+    clearRest(userId);
+    return null;
+  }
+  return s;
+}
+
 export function useRestTimer(userId: string): UseRestTimer {
-  const [state, setState] = useState<RestState | null>(() => loadRest(userId));
+  const [state, setState] = useState<RestState | null>(() => loadLiveRest(userId));
   const [now, setNow] = useState(() => Date.now());
   const [capability, setCapability] = useState<NotifyCapability>(() => notifyCapability());
   const stateRef = useRef<RestState | null>(state);
@@ -56,7 +69,7 @@ export function useRestTimer(userId: string): UseRestTimer {
 
   // Restore any live rest when the user changes (or on first mount).
   useEffect(() => {
-    setState(loadRest(userId));
+    setState(loadLiveRest(userId));
     setNow(Date.now());
   }, [userId]);
 
@@ -65,9 +78,12 @@ export function useRestTimer(userId: string): UseRestTimer {
   const fireIfExpired = useCallback(
     (s: RestState | null, t: number) => {
       if (!s || s.notified || !isExpired(s, t)) return;
+      // Mark it notified either way, so a rest that expired unattended can never
+      // fire on some later launch.
       const updated = { ...s, notified: true };
       setState(updated);
       persistRest(userId, updated);
+      if (!shouldNotifyRest(s, t)) return; // ended too long ago to be a useful cue
       haptic('affirm'); // the phone may be face-down on a bench (POLISH.md §2)
       playCue('affirm'); // audible rest-over chime (plays on iOS once audio unlocked)
       void showRestCompleteNow();
@@ -102,7 +118,7 @@ export function useRestTimer(userId: string): UseRestTimer {
     if (typeof document === 'undefined') return;
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
-      const fresh = loadRest(userId) ?? stateRef.current;
+      const fresh = loadLiveRest(userId) ?? stateRef.current;
       if (fresh && fresh !== stateRef.current) setState(fresh);
       const t = Date.now();
       setNow(t);
