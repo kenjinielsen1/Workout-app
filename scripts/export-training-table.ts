@@ -44,13 +44,22 @@ async function main() {
   for (const [name, r] of [['exercises', ex], ['workouts', wk], ['sets', st], ['user_profile', pr]] as const) {
     if (!r.error) continue;
     const e = r.error as { code?: string; message?: string; hint?: string };
-    const auth = e.code === 'PGRST301' || /jwt|api key|unauthor/i.test(e.message ?? '');
     console.error(`Reading "${name}" failed${e.code ? ` (${e.code})` : ''}: ${e.message ?? r.error}`);
-    if (auth) {
+    if (e.code === 'PGRST303') {
+      // The legacy service_role key is a JWT; PostgREST refuses it when its "issued
+      // at" claim sits ahead of the server clock. A new-format secret key is not a
+      // JWT at all, so it has no iat and this cannot recur.
       console.error(
-        'This looks like an auth failure. If the Supabase project moved to the new\n' +
-        'API keys, the legacy service_role JWT is disabled — create a secret key\n' +
-        '(sb_secret_…) and update the SUPABASE_SERVICE_ROLE_KEY repo secret.',
+        'The key was rejected for its "issued at" claim, not its permissions.\n' +
+        'Replace the SUPABASE_SERVICE_ROLE_KEY repo secret with a new-format\n' +
+        'secret key (sb_secret_…) from Supabase → Settings → API Keys. Those are\n' +
+        'not JWTs, so they carry no timestamp to fall out of sync.',
+      );
+    } else if (e.code === 'PGRST301' || /jwt|api key|unauthor/i.test(e.message ?? '')) {
+      console.error(
+        'This looks like an auth failure. If the project moved to the new API keys,\n' +
+        'the legacy service_role JWT is disabled — create a secret key (sb_secret_…)\n' +
+        'and update the SUPABASE_SERVICE_ROLE_KEY repo secret.',
       );
     }
     process.exit(1);
